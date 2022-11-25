@@ -1,0 +1,1915 @@
+---
+title: "Various illustrations of the hyperbolic and power-law models"
+output: html_notebook
+editor_options: 
+  chunk_output_type: console
+---
+
+# Setup
+
+```{r}
+library("here")
+library("tidyverse")
+library("scales")
+library("magrittr")
+library("janitor")
+library("RColorBrewer")
+library("cowplot")
+library("stats4") # provides nls() for non-linear least squares
+
+# library("ggtext") # provides functionality for changing font sizes /within/ ggplot text
+
+# devtools::install_github("baptiste/egg")
+# The above command installs the package egg which 
+# helps with arranging multiple plots when some have a legend
+# and others have not, e.g. see the command
+# grid::grid.draw(egg::ggarrange(plots = list(p1, p2), ncol = 1)) below:
+
+library("tikzDevice")
+options( 
+  tikzDocumentDeclaration = c(
+    "\\documentclass[12pt]{article}",
+    "\\usepackage{amssymb, amsmath, graphicx, mathtools, mathdots, stmaryrd}",
+    "\\usepackage{tikz}" 
+  )
+)
+
+
+setwd("~/Dropbox/jd-af/code/endurance/") # uncomment this (and potentially modify the file path) if working without RStudio
+source(file.path(getwd(), "scripts", "r", "cpp_interface.R")) # compiles C++ code 
+source(file.path(getwd(), "scripts", "r", "helper_functions.R"))
+source(file.path(getwd(), "scripts", "r", "create_figures.R"))
+setwd(here())
+
+# path_to_figure_folder <- file.path(getwd(), "output")
+path_to_figure_folder <- "/home/axel/Dropbox/Apps/Overleaf/Power-law model/fig/"
+
+options(scipen = 10000) # avoid scientific notation
+
+# Saves the images for inclusion in a LaTeX document
+# using the tikzDevice package.
+save_image <- function(plot, filename, width = 2.2, height = 2) {
+  tikz(
+    file       = file.path(path_to_figure_folder, paste0(filename, ".tex")),
+    standAlone = FALSE,
+    width      = width,
+    height     = height
+  )
+  print(plot)
+  dev.off()
+}
+
+# Colours
+col_hyp <- "#F8766D"
+col_pow <- "#00BFC4"
+
+# Symbol for the threshold in piecewise-defined models:
+threshold_symbol <- "$T_{\\mathrlap{*}}$"
+
+MILE_IN_M <- 1609.34 # number of metres to a mile
+```
+
+
+# Figure illustrating the role of the speed and endurance parameters in the power-law model
+
+```{r}
+durations   <- seq(from = 0, to = 180, length = 100)
+n_durations <- length(durations)
+S <- c(1600, 750)
+E <- c(0.7, 0.9)
+athletes <- c("Sprint specialist\n(large $S$, small $E$)", 
+              "Endurance specialist\n(small $S$, large $E$)")
+n_athletes <- length(athletes)
+
+
+pl_tbl <- tibble(
+  duration = rep(durations, times = n_athletes),
+  speed = rep(S, each = n_durations),
+  endurance = rep(E, each = n_durations),
+  power = speed * duration^(endurance - 1),
+  athlete = rep(athletes, each = n_durations)
+)
+
+my_theme <- theme_classic() +
+  theme(legend.position = c(0.6, 0.9)) # places the legend inside the plot
+
+
+coords_sprint <- c(15, S[1] * 15^(E[1] - 1))
+label_coords_sprint <- coords_sprint + c(10, 350)
+coords_endure <- c(150, S[2] * 150^(E[2] - 1))
+label_coords_endure <- coords_endure + c(0, 200)
+
+pl_tbl %>%
+  mutate(athlete = factor(athlete, levels = athletes)) %>%
+  ggplot(mapping = aes(x = duration, y = power, linetype = athlete)) +
+  geom_line(colour = col_model["power-law"], show.legend = FALSE) +
+  # scale_y_continuous(expand = c(0, 0), breaks = NULL) +
+  # scale_x_continuous(expand = c(0, 0), breaks = NULL) +
+  # scale_y_continuous(breaks = NULL) +
+  # scale_x_continuous(breaks = NULL) +
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_x_continuous(expand = c(0, 0)) +
+  coord_cartesian(ylim = c(0, 1500), xlim = c(0, max(durations))) +
+  labs(x = "Duration [s]", y = "Power [J/s]", linetype = "") +
+  my_theme +
+  annotate(
+    geom       = "text", 
+    x          = label_coords_sprint[1],
+    y          = label_coords_sprint[2], 
+    label      = athletes[1],
+    hjust      = -0.02, vjust = 0,
+    lineheight = 1#,
+    # colour     = col_model["power-law"]
+  ) + 
+  annotate(
+    geom       = "curve", 
+    xend       = coords_sprint[1],
+    yend       = coords_sprint[2], 
+    x          = label_coords_sprint[1] + 0.05, 
+    y          = label_coords_sprint[2] - 20,
+    curvature  = 0.05, 
+    arrow      = arrow(length = unit(2, "mm")),
+    alpha      = 1#,
+    # colour     = col_model["power-law"]
+  ) +
+  annotate(
+    geom       = "text", 
+    x          = label_coords_endure[1],
+    y          = label_coords_endure[2], 
+    label      = athletes[2],
+    hjust      = 0.8, vjust = 0,
+    lineheight = 1#,
+    # colour     = col_model["power-law"]
+  ) + 
+  annotate(
+    geom       = "curve", 
+    xend       = coords_endure[1],
+    yend       = coords_endure[2], 
+    x          = label_coords_endure[1] + 0.05, 
+    y          = label_coords_endure[2] - 20,
+    curvature  = -0.2, 
+    arrow      = arrow(length = unit(2, "mm")),
+    alpha      = 1#,
+    # colour     = col_model["power-law"]
+  ) -> plot_illustration
+
+save_image(plot_illustration, "power_law_illustration", width = 3, height = 2.3)
+
+
+```
+
+
+
+# Illustration of the equivalent power--duration, power--work, and work--duration relationships in the hyperbolic and power-law models
+
+```{r}
+
+
+# Hyperbolic ("critical-power") model parameters:
+cp      <- 300 # critical power
+w_prime <- 25000 # W'
+
+# Power-law model parameters:
+speed          <- 1200 # speed
+endurance      <- 0.8 # endurance 
+fatigue_factor <- 1 / endurance # fatigue factor
+
+# Values for the first axis:
+durations <- seq(from = 0.01, to = 15 * 60, length = 100) # duration
+works     <- seq(from = 0.01, to = 200000, length = 100) # work
+
+size_text <- "\\small"
+hjust_text <- -0.45
+vjust_text_upper <- 3
+vjust_text_lower <- 5
+vjust_text_upper_alt <- 12
+vjust_text_lower_alt <- 12
+col_text_hyp <- "black" # col_hyp
+col_text_pow <- "black" # col_pow
+
+# label_pd_hyp <- paste0(size_text, "$P = P_{\\text{\\textsc{hyp}}}(T) = \\dfrac{W'}{T} + \\mathit{CP}$")
+# label_dp_hyp <- paste0(size_text, "$T = T_{\\text{\\textsc{hyp}}}(P) = \\dfrac{W'}{P - \\mathit{CP}}$")
+# label_pw_hyp <- paste0(size_text, "$P = P_{\\text{\\textsc{hyp}}}(W) = \\dfrac{\\mathit{CP}}{1 - W' / W}$")
+# label_wp_hyp <- paste0(size_text, "$W = W_{\\text{\\textsc{hyp}}}(P) = \\dfrac{W'}{1 - \\mathit{CP} / P}$")
+# label_wd_hyp <- paste0(size_text, "$W = W_{\\text{\\textsc{hyp}}}(T) = W' + \\mathit{CP} \\cdot T$")
+# label_dw_hyp <- paste0(size_text, "$T = T_{\\text{\\textsc{hyp}}}(W) = \\dfrac{W'}{1 - \\mathit{CP} / P}$")
+# 
+# label_pd_pow <- paste0(size_text, "$P = P_{\\text{\\textsc{pow}}}(T) = S^{E - 1}$")
+# label_dp_pow <- paste0(size_text, "$T = T_{\\text{\\textsc{pow}}}(P) = \\biggl(\\dfrac{S}{P}\biggr)^{1 / (1 - E)}$")
+# label_pw_pow <- paste0(size_text, "$P = P_{\\text{\\textsc{pow}}}(W) = S^F W^{1 - F}$")
+# label_wp_pow <- paste0(size_text, "$W = W_{\\text{\\textsc{pow}}}(P) = \biggl(\\dfrac{S^F}{P}\\biggr)^{1 / (F - 1)}$")
+# label_wd_pow <- paste0(size_text, "$W = W_{\\text{\\textsc{pow}}}(T) = S \\cdot T^E$")
+# label_dw_pow <- paste0(size_text, "$T = T_{\\text{\\textsc{pow}}}(W) = \biggl(\\dfrac{W}{S}\biggr)^F$")
+
+label_pd_hyp <- paste0(size_text, "$P = \\dfrac{W'}{T} + \\mathit{CP}$")
+label_dp_hyp <- paste0(size_text, "$T = \\dfrac{W'}{P - \\mathit{CP}}$")
+label_pw_hyp <- paste0(size_text, "$P = \\dfrac{\\mathit{CP}}{1 - W' / W}$")
+label_wp_hyp <- paste0(size_text, "$W = \\dfrac{W'}{1 - \\mathit{CP} / P}$")
+label_wd_hyp <- paste0(size_text, "$W = W' + \\mathit{CP} \\cdot T$")
+label_dw_hyp <- paste0(size_text, "$T = \\dfrac{W'}{1 - \\mathit{CP} / P}$")
+
+label_pd_pow <- paste0(size_text, "$P = S^{E - 1}$")
+label_dp_pow <- paste0(size_text, "$T = \\biggl(\\dfrac{S}{P}\biggr)^{1 / (1 - E)}$")
+label_pw_pow <- paste0(size_text, "$P = S^F W^{1 - F}$")
+label_wp_pow <- paste0(size_text, "$W = \biggl(\\dfrac{S^F}{P}\\biggr)^{1 / (F - 1)}$")
+label_wd_pow <- paste0(size_text, "$W = S \\cdot T^E$")
+label_dw_pow <- paste0(size_text, "$T = \biggl(\\dfrac{W}{S}\biggr)^F$")
+
+# Equivalent relationships for the hyperbolic model:
+pd_hyp_tbl <- tibble(duration = durations, power = w_prime / durations + cp)
+pw_hyp_tbl <- tibble(work = works, power = cp / (1 - w_prime / works))
+wd_hyp_tbl <- tibble(duration = durations, work = w_prime + cp * durations)
+  
+# Equivalent relationships for the power-law model:
+pd_pow_tbl <- tibble(duration = durations, power = speed * durations^(endurance - 1))
+pw_pow_tbl <- tibble(work = works, power = speed^fatigue_factor * works^(1 - fatigue_factor))
+wd_pow_tbl <- tibble(duration = durations, work = speed * durations^endurance)
+
+# Axis labels
+# label_power    <- "Power [J/s] ($P$)"
+# label_duration <- "Duration [s] ($T$)"
+# label_work     <- "Work [kJ] ($W$)"
+
+label_power    <- "Power [J/s]"
+label_duration <- "Duration [s]"
+label_work     <- "Work [kJ]"
+
+# Axis limits
+lim_power    <- c(0, 2000)
+lim_duration <- c(0, max(durations))
+lim_work     <- c(0, max(works))
+
+col_abline_hyp <- "black"
+col_abline_pow <- "black"
+
+# Expansion
+expand_power    <- c(0, 0)
+expand_duration <- c(0, 0)
+expand_work     <- c(0, 0)
+
+tick_power      <- pretty(0:max(lim_power))
+tick_duration   <- pretty(0:max(lim_duration))
+tick_work       <- pretty(0:max(lim_work))
+tick_work_alt   <- tick_work[-(length(tick_work))]
+
+my_theme <- theme_classic() +
+  theme(plot.margin = unit(c(5.5, 13, 5.5, 5.5), "pt"))
+
+
+
+pd_hyp_tbl %>%
+  ggplot(mapping = aes(x = duration, y = power)) +
+  geom_line(colour = col_hyp) +
+  geom_hline(yintercept = cp, linetype = "dotted", colour = col_abline_hyp) +
+  coord_cartesian(xlim = lim_duration, ylim = lim_power) +
+  scale_x_continuous(expand = expand_duration, breaks = tick_duration) +
+  scale_y_continuous(expand = expand_power, breaks = c(tick_power, cp), labels = c(tick_power, "$\\mathit{CP}$")) +
+  labs(x = label_duration, y = label_power) +
+  my_theme -> plot_pd_hyp
+  # annotate(
+  #   geom       = "text", 
+  #   x          = -Inf,
+  #   y          = Inf, 
+  #   label      = label_pd_hyp,
+  #   hjust      = hjust_text, vjust = vjust_text_upper,
+  #   lineheight = 1,
+  #   colour     = col_text_hyp
+  # ) -> plot_pd_hyp
+
+  # +
+  # annotate(
+  #   geom       = "text", 
+  #   x          = -Inf,
+  #   y          = Inf, 
+  #   label      = label_dp_hyp,
+  #   hjust      = hjust_text, vjust = vjust_text_lower,
+  #   lineheight = 1,
+  #   colour     = col_text_hyp
+  # ) 
+
+pw_hyp_tbl %>%
+  filter(work > w_prime) %>%
+  ggplot(mapping = aes(x = work, y = power)) +
+  geom_line(colour = col_hyp) +
+  geom_vline(xintercept = w_prime, linetype = "dotted", colour = col_abline_hyp) +
+  geom_hline(yintercept = cp, linetype = "dotted", colour = col_abline_hyp) +
+  coord_cartesian(xlim = lim_work, ylim = lim_power) +
+  scale_x_continuous(expand = expand_work, breaks = c(tick_work_alt, w_prime), labels = c(tick_work_alt / 1000, "$W'$")) +
+  scale_y_continuous(expand = expand_power, breaks = c(tick_power, cp), labels = c(tick_power, "$\\mathit{CP}$")) +
+  labs(x = label_work, y = label_power) +
+  my_theme -> plot_pw_hyp 
+  # annotate(
+  #   geom       = "text", 
+  #   x          = -Inf,
+  #   y          = Inf, 
+  #   label      = label_pw_hyp,
+  #   hjust      = hjust_text, vjust = vjust_text_upper,
+  #   lineheight = 1,
+  #   colour     = col_text_hyp
+  # ) -> plot_pw_hyp
+  # +
+  # annotate(
+  #   geom       = "text", 
+  #   x          = -Inf,
+  #   y          = Inf, 
+  #   label      = label_wp_hyp,
+  #   hjust      = hjust_text, vjust = vjust_text_lower,
+  #   lineheight = 1,
+  #   colour     = col_text_hyp
+  # ) 
+  
+wd_hyp_tbl %>%
+  ggplot(mapping = aes(x = duration, y = work)) +
+  geom_line(colour = col_hyp) +
+  coord_cartesian(xlim = lim_duration, ylim = lim_work) +
+  scale_x_continuous(expand = expand_work, breaks = tick_duration) +
+  scale_y_continuous(expand = expand_power, breaks = c(tick_work, w_prime), labels = c(tick_work / 1000, "$W'$")) +
+  labs(x = label_duration, y = label_work) +
+  my_theme -> plot_wd_hyp
+  # annotate(
+  #   geom       = "text", 
+  #   x          = -Inf,
+  #   y          = Inf, 
+  #   label      = label_wd_hyp,
+  #   hjust      = hjust_text, vjust = vjust_text_upper_alt,
+  #   lineheight = 1,
+  #   colour     = col_text_hyp
+  # ) -> plot_wd_hyp
+  # +
+  # annotate(
+  #   geom       = "text", 
+  #   x          = -Inf,
+  #   y          = Inf, 
+  #   label      = label_dw_hyp,
+  #   hjust      = hjust_text, vjust = vjust_text_lower_alt,
+  #   lineheight = 1,
+  #   colour     = col_text_hyp
+  # ) 
+  
+
+save_image(plot_pd_hyp, "power--duration_relationship_hyp")
+save_image(plot_pw_hyp, "power--work_relationship_hyp")
+save_image(plot_wd_hyp, "work--duration_relationship_hyp")
+
+
+pd_pow_tbl %>%
+  ggplot(mapping = aes(x = duration, y = power)) +
+  geom_line(colour = col_pow) +
+  coord_cartesian(xlim = lim_duration, ylim = lim_power) +
+  scale_x_continuous(expand = expand_duration, breaks = tick_duration) +
+  scale_y_continuous(expand = expand_power, breaks = tick_power) +
+  labs(x = label_duration, y = label_power) +
+  my_theme -> plot_pd_pow
+  # annotate(
+  #   geom       = "text", 
+  #   x          = -Inf,
+  #   y          = Inf, 
+  #   label      = label_pd_pow,
+  #   hjust      = hjust_text, vjust = vjust_text_upper,
+  #   lineheight = 1,
+  #   colour     = col_text_pow
+  # ) -> plot_pd_pow
+
+pw_pow_tbl %>%
+  ggplot(mapping = aes(x = work, y = power)) +
+  geom_line(colour = col_pow) +
+  coord_cartesian(xlim = lim_work, ylim = lim_power) +
+  scale_x_continuous(expand = expand_work, breaks = tick_work_alt, label = tick_work_alt / 1000) +
+  scale_y_continuous(expand = expand_power, breaks = tick_power) +
+  labs(x = label_work, y = label_power) +
+  my_theme -> plot_pw_pow
+  # annotate(
+  #   geom       = "text", 
+  #   x          = -Inf,
+  #   y          = Inf, 
+  #   label      = label_pw_pow,
+  #   hjust      = hjust_text, vjust = vjust_text_upper,
+  #   lineheight = 1,
+  #   colour     = col_text_pow
+  # ) -> plot_pw_pow
+  
+wd_pow_tbl %>%
+  ggplot(mapping = aes(x = duration, y = work)) +
+  geom_line(colour = col_pow) +
+  coord_cartesian(xlim = lim_duration, ylim = lim_work) +
+  scale_x_continuous(expand = expand_work, breaks = tick_duration) +
+  scale_y_continuous(expand = expand_power, breaks = tick_work, labels = tick_work / 1000) +
+  labs(x = label_duration, y = label_work)+
+  my_theme -> plot_wd_pow
+  # annotate(
+  #   geom       = "text", 
+  #   x          = -Inf,
+  #   y          = Inf, 
+  #   label      = label_wd_pow,
+  #   hjust      = hjust_text, vjust = vjust_text_upper_alt,
+  #   lineheight = 1,
+  #   colour     = col_text_pow
+  # ) -> plot_wd_pow
+
+save_image(plot_pd_pow, "power--duration_relationship_pow")
+save_image(plot_pw_pow, "power--work_relationship_pow")
+save_image(plot_wd_pow, "work--duration_relationship_pow")
+
+```
+
+# Illustration of the three "omni power--duration" models (OmPD, Om3CP, and OmExp) from Puchowicz et al. (2020).
+
+This clearly shows the "kink" in the power--duration relationship implied by these models at the threshold. In addition, the power--duration curve eventually becomes negative.
+
+
+```{r}
+# The models are fitted to the data from Leo et al. (2021)
+# Note that most most data points are unlikely to correspond to 
+# maximal efforts except perhaps from those at 5, 12, and 35 seconds as well as 
+# 3, 7, and 12 minutes
+data_leo <- readxl::read_excel(here("data", "leo_2021_original_data.xlsx")) %>%
+  rename(duration = `Time (s)`,
+         power = `Mean Maximum Power`,  
+         ompd_leo = `Omni PD`, 
+         pt_leo = `Peronnet & Thibault`) %>%
+  filter(!is.na(duration))
+
+# data_leo %>%
+#   ggplot(mapping = aes(x = duration, y = power)) +
+#   geom_point() +
+#   scale_x_continuous(limits = 60 * c(0, 3), breaks = c(5, 12, 35, 60 * c(3, 7, 12))) + 
+#   theme_grey()
+
+# The durations for plotting.
+durations <- c(0, seq(from = 0.1, to = 60 * 120, length = 250))
+
+################################################################################
+# The three "omni-duration" models from Puchowicz et al. (2020)
+################################################################################
+
+threshold <- 1800 # threshold used by Puchowicz et al. (2020)
+
+# Computes the powers for given durations according to the OmPD model.
+pd_ompd <- function(duration, w_prime, cp, a, p_max) {
+  w_prime / duration * (1 - exp(duration * (cp - p_max) / w_prime)) + cp - (duration > threshold) * a * log(duration / threshold)
+}
+# Computes the powers for given durations according to the Om3CP model.
+pd_om3cp <- function(duration, w_prime, cp, a, p_max) {
+  w_prime / (duration + w_prime / (p_max - cp)) + cp - (duration > threshold) * a * log(duration / threshold)
+}
+# Computes the powers for given durations according to the OmExp model.
+pd_omexp <- function(duration, w_prime, cp, a, p_max) {
+  (p_max - cp) * exp(duration * (cp - p_max) / (exp(1) * w_prime)) + cp - (duration > threshold) * a * log(duration / threshold)
+}
+
+################################################################################
+# The three "Veloclinic" multicomponent models implemented in Golden Cheetah
+# (but not currently used in our paper) for comparison.
+################################################################################
+
+# Computes the powers for given durations according to the "linear" 
+# "Veloclinic" model as implemented in Golden Cheetah.
+pd_gc_lin <- function(duration, w_prime, cp, p_max) {
+  tau_1 <- w_prime / (p_max - cp)
+  tau_2 <- 15000
+  return(
+    w_prime / duration * (1 - exp(-duration / tau_1)) + 
+      cp * tau_2 * (1 - exp(-duration / tau_2)) / duration
+  )
+}
+# Computes the powers for given durations according to the "regeneration" 
+# "Veloclinic" model as implemented in Golden Cheetah.
+pd_gc_reg <- function(duration, w_prime, cp, p_max) {
+  tau_1 <- w_prime / (p_max - cp)
+  tau_2 <- 15000
+  return(
+    w_prime / duration * (1 - exp(-duration / tau_1)) +
+      cp / (1 + duration / tau_2)
+  )
+}
+# Computes the powers for given durations according to the "exponential"
+# "Veloclinic" model as implemented in Golden Cheetah.
+pd_gc_exp <- function(duration, w_prime, cp, p_max) {
+  tau_1 <- w_prime / (p_max - cp)
+  tau_2 <- 15000
+  return(
+    w_prime / duration * (1 - exp(-duration / tau_1)) + 
+      cp / (1 + duration / 5400)
+  )
+}
+
+
+################################################################################
+# The simplified version of the Peronnet & Thibault (1989) model which has 
+# been floating around the internet (e.g., <http://veloclinic.com/peronnet-and-thibault-the-source-model-under-the-hood-of-wko4-wko5/>
+# and which removes the integrals from the 
+# original formulation in Peronnet & Thibault (1989) but we haven't been able
+# to track down the original source for this
+################################################################################
+
+# Computes the powers for given durations according to the simplified
+# Peronnet & Thibault model (given that the simplified model is different from 
+# the original paper, it is not clear which of the model parameters are meant
+# to be estimated from the data and which are fixed to some pre-specified 
+# values
+pd_pt_simple <- function(duration, w_prime, cp, tau_1, tau_2, a) {
+  threshold <- 420
+  w_prime / duration * (1 - exp(-duration / tau_1)) + 
+    cp * (1 - exp(-duration/tau_2)) - 
+    (duration > threshold) * a * log(duration / threshold) 
+}
+
+
+
+################################################################################
+# OmPD model
+################################################################################
+
+
+
+# Initial values
+w_prime_init <- 14000 # previously: 20000 
+cp_init <- 300
+a_init <- 60
+p_max_init <- 1000
+
+# Initial values (these work better for a threshold of 15 minutes)
+# w_prime_init <- 14000 
+# cp_init <- 412
+# a_init <- 85
+# p_max_init <- 1500
+
+# This gives the same formula as the R code 
+# provided in Puchowicz et al. (2020)
+nls_ompd <- nls(
+  formula = power ~ I(pd_ompd(duration, w_prime, cp, a, p_max)),
+  data = data_leo,
+  start = list(w_prime = w_prime_init, cp = cp_init, 
+               a = a_init, p_max = p_max_init),
+  lower = c(0, 0, 0, 0),
+  algorithm = "port",
+  trace = TRUE,
+  control = list(warnOnly = TRUE) 
+)
+
+w_prime_ompd <- coef(nls_ompd)["w_prime"]
+cp_ompd      <- coef(nls_ompd)["cp"]
+a_ompd       <- coef(nls_ompd)["a"]
+p_max_ompd   <- coef(nls_ompd)["p_max"]
+
+fitted_ompd <- 
+  tibble(duration = durations, 
+         power = pd_ompd(durations, w_prime_ompd, cp_ompd, a_ompd, p_max_ompd),
+         model = "OmPD")
+
+
+################################################################################
+# Om3CP model
+################################################################################
+
+nls_om3cp <- nls(
+  formula = power ~ I(pd_om3cp(duration, w_prime, cp, a, p_max)), 
+  data = data_leo, #fitted_ompd,
+  start = list(w_prime = w_prime_ompd, cp = cp_ompd, 
+               a = a_ompd, p_max = p_max_ompd),
+  # lower = c(0, 0, 0, 0),
+  # algorithm = "port",
+  trace = TRUE,
+  control = list(warnOnly = TRUE) 
+)
+
+w_prime_om3cp <- coef(nls_om3cp)["w_prime"]
+cp_om3cp      <- coef(nls_om3cp)["cp"]
+a_om3cp       <- coef(nls_om3cp)["a"]
+p_max_om3cp   <- coef(nls_om3cp)["p_max"]
+
+fitted_om3cp <- 
+  tibble(duration = durations, 
+         power = pd_om3cp(durations, w_prime_om3cp, cp_om3cp, a_om3cp, p_max_om3cp),
+         model = "Om3CP")
+
+
+################################################################################
+# OmExp model
+################################################################################
+
+nls_omexp <- nls(
+  formula = power ~ I(pd_omexp(duration, w_prime, cp, a, p_max)), 
+  data = data_leo, # fitted_ompd,
+  start = list(w_prime = w_prime_ompd, cp = cp_ompd, 
+               a = a_ompd, p_max = p_max_ompd),
+  # lower = c(0, 0, 0, 0),
+  # algorithm = "port",
+  trace = TRUE,
+  control = list(warnOnly = TRUE) 
+)
+
+w_prime_omexp <- coef(nls_omexp)["w_prime"]
+cp_omexp      <- coef(nls_omexp)["cp"]
+a_omexp       <- coef(nls_omexp)["a"]
+p_max_omexp   <- coef(nls_omexp)["p_max"]
+
+fitted_omexp <- 
+  tibble(duration = durations, 
+         power = pd_omexp(durations, w_prime_omexp, cp_omexp, a_omexp, p_max_omexp),
+         model = "OmExp")
+
+
+################################################################################
+# The "Veloclinic multicomponent" "linear" model from Golden Cheetah
+################################################################################
+
+nls_gc_lin <- nls(
+  formula = power ~ I(pd_gc_lin(duration, w_prime, cp, p_max)), 
+  data = data_leo, # fitted_ompd,
+  start = list(w_prime = w_prime_ompd, cp = cp_ompd, 
+               p_max = p_max_ompd),
+  # lower = c(0, 0, 0, 0),
+  # algorithm = "port",
+  trace = TRUE,
+  control = list(warnOnly = TRUE) 
+)
+
+w_prime_gc_lin <- coef(nls_gc_lin)["w_prime"]
+cp_gc_lin      <- coef(nls_gc_lin)["cp"]
+p_max_gc_lin   <- coef(nls_gc_lin)["p_max"]
+
+fitted_gc_lin <- 
+  tibble(duration = durations, 
+         power = pd_gc_lin(durations, w_prime_gc_lin, cp_gc_lin, p_max_gc_lin),
+         model = "gc_lin")
+
+################################################################################
+# The "Veloclinic multicomponent" "regeneration" model from Golden Cheetah
+################################################################################
+
+nls_gc_reg <- nls(
+  formula = power ~ I(pd_gc_reg(duration, w_prime, cp, p_max)), 
+  data = data_leo, # fitted_ompd,
+  start = list(w_prime = w_prime_ompd, cp = cp_ompd, 
+               p_max = p_max_ompd),
+  # lower = c(0, 0, 0, 0),
+  # algorithm = "port",
+  trace = TRUE,
+  control = list(warnOnly = TRUE) 
+)
+
+w_prime_gc_reg <- coef(nls_gc_reg)["w_prime"]
+cp_gc_reg      <- coef(nls_gc_reg)["cp"]
+p_max_gc_reg   <- coef(nls_gc_reg)["p_max"]
+
+fitted_gc_reg <- 
+  tibble(duration = durations, 
+         power = pd_gc_reg(durations, w_prime_gc_reg, cp_gc_reg, p_max_gc_reg),
+         model = "gc_reg")
+
+
+################################################################################
+# The "Veloclinic multicomponent" "exponential" model from Golden Cheetah
+################################################################################
+
+nls_gc_exp <- nls(
+  formula = power ~ I(pd_gc_exp(duration, w_prime, cp, p_max)), 
+  data = data_leo, # fitted_ompd,
+  start = list(w_prime = w_prime_ompd, cp = cp_ompd, 
+               p_max = p_max_ompd),
+  # lower = c(0, 0, 0, 0),
+  # algorithm = "port",
+  trace = TRUE,
+  control = list(warnOnly = TRUE) 
+)
+
+w_prime_gc_exp <- coef(nls_gc_exp)["w_prime"]
+cp_gc_exp      <- coef(nls_gc_exp)["cp"]
+p_max_gc_exp   <- coef(nls_gc_exp)["p_max"]
+
+fitted_gc_exp <- 
+  tibble(duration = durations, 
+         power = pd_gc_exp(durations, w_prime_gc_exp, cp_gc_exp, p_max_gc_exp),
+         model = "gc_exp")
+
+
+
+################################################################################
+# Power-law model
+################################################################################
+
+ols_pow <- lm(formula = I(log(power)) ~ I(log(duration)), data = data_leo) # fitted_ompd)
+speed     <- exp(coef(ols_pow))[1]
+endurance <- coef(ols_pow)[2] + 1
+
+fitted_pow <- tibble(duration = durations,
+                     power = speed * durations^(endurance - 1),
+                     model = "Power law")
+
+################################################################################
+# Combining all the fitted values into a single tibble
+################################################################################
+
+fitted_tbl <- fitted_pow %>%
+  bind_rows(fitted_ompd) %>%
+  bind_rows(fitted_om3cp) %>%
+  bind_rows(fitted_omexp) %>%
+  bind_rows(fitted_gc_lin) %>%
+  bind_rows(fitted_gc_reg) %>%
+  bind_rows(fitted_gc_exp)
+
+################################################################################
+# Visualisation
+################################################################################
+
+coords <- c(threshold, pd_ompd(threshold, w_prime_ompd, cp_ompd, a_ompd, p_max_ompd)) + c(0, 12)
+label_coords <- coords + c(60 * 20, 40)
+
+fitted_tbl %>%
+  filter(model %in% c("OmPD", "Om3CP", "OmExp", "Power law")) %>%
+  ggplot(mapping = aes(x = duration, 
+                       y = power, 
+                       colour = model, 
+                       linetype = model)) +
+  geom_point(data = data_leo, mapping = aes(x = duration, y = power, model = NULL), inherit.aes = FALSE, size = 0.3) +
+  geom_line() +
+  # geom_step(data = data_leo, mapping = aes(x = duration, y = OmPD, model = NULL), inherit.aes = FALSE, colour = "blue") +
+  # geom_step(data = data_leo, mapping = aes(x = duration, y = `Peronnet & Thibault`, model = NULL), inherit.aes = FALSE, colour = "green") +
+  geom_vline(xintercept = threshold, linetype = "dotted") +
+  scale_colour_manual(breaks = c("OmPD", "Om3CP", "OmExp", "Power law"),
+                      values = c(col_hyp, col_hyp, col_hyp, col_pow)) +
+  scale_linetype_manual(breaks = c("OmPD", "Om3CP", "OmExp", "Power law"),
+                        values = c(1, 2, 3, 1)) +
+  scale_x_continuous(expand = c(0, 0), breaks = c(60 * c(0, 60, 90), threshold), labels = c(0, 60, 90, threshold_symbol)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(x = "Duration [minutes]", y = "Power [J/s]", 
+       colour = "Model", linetype = "Model") +
+  coord_cartesian(ylim = c(200, 600)) +   # coord_cartesian(ylim = c(200, 500)) +
+  annotate(
+    geom       = "text", 
+    x          = label_coords[1],
+    y          = label_coords[2], 
+    label      = "`Kink'",
+    hjust      = 0, vjust = 0,
+    lineheight = 1,
+    colour     = col_hyp
+  ) + 
+  annotate(
+    geom       = "curve", 
+    xend       = coords[1] + 50,
+    yend       = coords[2], 
+    x          = label_coords[1] - 100, 
+    y          = label_coords[2] + 1,
+    curvature  = 0.2, 
+    arrow      = arrow(length = unit(2, "mm")),
+    alpha      = 1,
+    colour     = col_hyp
+  ) -> plot_omni
+
+save_image(plot_omni, "omni", width = 4, height = 2.3)
+```
+
+
+
+```{r}
+fitted_tbl_aux <- data_leo %>%
+  select(duration, ompd_leo) %>%
+  rename(power = ompd_leo) %>%
+  mutate(model = "ompd_leo")
+
+fitted_tbl_aux <- fitted_tbl %>% bind_rows(fitted_tbl_aux)
+  
+  
+fitted_tbl_aux %>%
+  filter(model %in% c("OmPD", "ompd_leo", "gc_lin", "gc_reg", "gc_exp")) %>%
+  ggplot(mapping = aes(x = duration, 
+                       y = power, 
+                       colour = model)) +
+  geom_point(data = data_leo, mapping = aes(x = duration, y = power, model = NULL), inherit.aes = FALSE, size = 0.3) +
+  geom_line() +
+  geom_vline(xintercept = threshold, linetype = "dotted") +
+  # scale_colour_manual(breaks = c("OmPD", "Om3CP", "OmExp", "Power law"),
+                      # values = c(col_hyp, col_hyp, col_hyp, col_pow)) +
+  # scale_linetype_manual(breaks = c("OmPD", "Om3CP", "OmExp", "Power law"),
+                        # values = c(1, 2, 3, 1)) +
+  scale_x_continuous(expand = c(0, 0), breaks = c(60 * c(0, 60, 90), threshold), 
+                     labels = c(0, 60, 90, threshold_symbol)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(x = "Duration [minutes]", y = "Power [J/s]", 
+       colour = "Model", linetype = "Model") +
+  coord_cartesian(ylim = c(200, 600)) -> p
+
+# save_image(plot_omni_alt, "omni_alt", width = 4, height = 2.3)
+```
+
+
+
+
+
+# Data set of Eliud Kipchoge's personal records (used to illustrate the model from Peronnet & Thibault (1989) and from Luttikholt & Jones (2022)).
+
+```{r}
+# Load the personal records for Eliud Kipchoge.
+# Somehow executing this part of the chunk via RStudio causes errors
+# but when copying-and-pasting it into the R console everything works
+# fine.
+# read_rds(here("data", "wa_running.Rds")) %>%
+#   filter(athlete == "Eliud Kipchoge") %>%
+#   filter(is_legal) %>%
+#   rename(work = distance) %>%
+#   mutate(duration = as.double(time_hms)) %>%
+#   mutate(power = work / duration) %>%
+#   select(power, duration, work) -> data_kipchoge
+# 
+
+read_rds(here("data", "wa_running.Rds")) %>%
+  ungroup() %>%
+  rename(duration = durations) %>%
+  filter(athlete == "Eliud Kipchoge") %>%
+  select(power, duration, work) -> data_kipchoge
+```
+
+
+
+# Illustration of the model from Peronnet & Thibault (1989).
+
+Note that this is the model from the original paper. There is a simpler version of this model floating around the internet which removes the integrals from the formulation in the paper and which is claimed to work better as a result (see, e.g., <http://veloclinic.com/peronnet-and-thibault-the-source-model-under-the-hood-of-wko4-wko5/>) but we have not managed to track down the original source for this simplified version.
+
+
+```{r}
+# Fixed/known parameters:
+threshold <- 420 # threshold used by Peronnet & Thibault (1989)
+f <- -0.233
+bmr <- 1.2
+k_1 <- 30
+k_2 <- 20
+
+# Computes the powers for given durations according to the 
+# Peronnet & Thibault (1989) model.
+pd_pt <- function(duration, map, a, e) {
+  (a * (1 - exp(-duration / k_2)) - k_1 * (map - bmr) * (1 - exp(-duration / k_1))) / duration + map + (duration > threshold) * log(duration / threshold) * ((a * f * (1 - exp(-duration / k_2)) - k_1 * e * (1 - exp(- duration / k_1))) / duration + e)
+}
+
+map_init <- 1
+a_init <-  1
+e_init <- -1
+
+nls_pt <- nls(
+  formula = power ~ I(pd_pt(duration, map, a, e)), 
+  data = data_kipchoge,
+  # weights = 1 / duration,
+  start = list(map = map_init, a = a_init, e = e_init),
+  lower = c(0, 0, -Inf),
+  upper = c(Inf, Inf, 0),
+  algorithm = "port",
+  trace = TRUE,
+  control = list(warnOnly = TRUE) # very rarely, the algorithm otherwise produce an error in small data sets which are such that the estimated value of W' is near zero
+)
+
+# Fit power-law model via linear-regression 
+# based on the power--duration relationship:
+ols_pow <- lm(formula = I(log(power)) ~ I(log(duration)), data = data_kipchoge)
+speed     <- exp(coef(ols_pow))[1]
+endurance <- coef(ols_pow)[2] + 1
+
+durations <- c(0, 0.1, 0.5, seq(from = 1, to = max(data_kipchoge$duration) * 1.05, length = 250))
+fitted_pow <- 
+  tibble(duration = durations, 
+         power = speed * durations^(endurance - 1),
+         model = "Power law")
+fitted_pt  <- 
+  tibble(duration = durations, 
+         power = pd_pt(durations, coef(nls_pt)[1], coef(nls_pt)[2], coef(nls_pt)[3]),
+         model = "P\\'eronnet \\& Thibault (1989)")
+
+kipchoge_fitted_tbl <- bind_rows(fitted_pow, fitted_pt)
+
+
+coords <- c(threshold, pd_pt(threshold, coef(nls_pt)[1], coef(nls_pt)[2], coef(nls_pt)[3]))
+label_coords <- coords + c(3, 0.2)
+
+
+
+# Inset plot:
+kipchoge_fitted_tbl %>%
+  ggplot(mapping = aes(x = duration, y = power, colour = model)) +
+  geom_point(data = data_kipchoge, mapping = aes(x = duration, y = power),
+             inherit.aes = FALSE,
+             colour = "black", size = 0.4) + 
+  geom_line(show.legend = FALSE) +
+  geom_vline(xintercept = threshold, linetype = "dotted") +
+  scale_colour_manual(breaks = c("P\\'eronnet \\& Thibault (1989)", "Power law"),
+                      values = c(col_hyp, col_pow)) +
+  scale_x_continuous(expand = c(0, 0),
+                     breaks = 60 * c(0, 60, 120),
+                     labels = c(0, 60, 120)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(x = "", y = "", colour = "") +
+  coord_cartesian(ylim = c(5, 8), 
+                  xlim = c(0, 120 * 60 * 1.05)) +
+  theme(
+    plot.margin = unit(c(1, 1, 1, 1), "pt"),
+    axis.title.x = element_text(margin = margin(t = 9)),
+    axis.title.y = element_text(margin = margin(r = 9)),
+    legend.margin = margin(0, 0, 0, 0),
+    panel.background = element_rect(fill = "transparent"), 
+    plot.background = element_rect(fill = "transparent", color = NA),
+    text = element_text(size = 8)
+  ) -> plot_pt_inset
+
+kipchoge_fitted_tbl %>%
+  ggplot(mapping = aes(x = duration, y = power, colour = model)) +
+  geom_point(data = data_kipchoge, mapping = aes(x = duration, y = power),
+             inherit.aes = FALSE,
+             colour = "black") + 
+  geom_line() +
+  geom_vline(xintercept = threshold, linetype = "dotted") +
+  scale_colour_manual(breaks = c("P\\'eronnet \\& Thibault (1989)", "Power law"),
+                      values = c(col_hyp, col_pow)) +
+  scale_x_continuous(expand = c(0, 0),
+                     breaks = c(60 * c(0, 10, 20), threshold),
+                     labels = c(0, 10, 20, threshold_symbol)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(x = "Duration [minutes]", y = "Velocity [m/s]", colour = "Model") +
+  coord_cartesian(ylim = c(6, 7.5), xlim = c(0, 20 * 60)) +
+  annotation_custom(
+    ggplotGrob(plot_pt_inset), 
+    xmin = 6.5 * 60, xmax = 20 * 60, ymin = 6.5, ymax = 7.5
+  ) -> plot_pt
+  # annotate(
+  #   geom       = "text", 
+  #   x          = label_coords[1],
+  #   y          = label_coords[2], 
+  #   label      = "Posited `kink'",
+  #   hjust      = 0, vjust = 0,
+  #   lineheight = 1,
+  #   colour     = col_hyp
+  # ) + 
+  # annotate(
+  #   geom       = "curve", 
+  #   xend       = coords[1],
+  #   yend       = coords[2], 
+  #   x          = label_coords[1], 
+  #   y          = label_coords[2],
+  #   curvature  = 0.2, 
+  #   arrow      = arrow(length = unit(2, "mm")),
+  #   alpha      = 1,
+  #   colour     = col_hyp
+  # ) -> plot_pt
+
+save_image(plot_pt, "pt", width = 4.5, height = 2.3)
+```
+
+
+# Illustration of the model from Luttikholt & Jones (2022).
+
+
+```{r}
+# Fixed/known parameters:
+threshold <- 360 # threshold used by Luttikholt & Jones (2022)
+
+# Computes the powers for given durations according to the 
+# Luttikholt & Jones (2022) model.
+pd_lj <- function(duration, w_prime, cp, endurance) {
+  (duration <= threshold) * (w_prime / duration + cp) + (duration > threshold) * (w_prime / threshold^(endurance) + cp / threshold^(endurance - 1)) * duration^(endurance - 1)
+}
+
+w_prime_init <- 150
+cp_init <- 6
+endurance_init <- 0.9
+
+nls_lj <- nls(
+  formula = power ~ I(pd_lj(duration, w_prime, cp, endurance)), 
+  data = data_kipchoge,
+  # weights = 1 / duration,
+  start = list(w_prime = w_prime_init, cp = cp_init, endurance = endurance_init),
+  lower = c(0, 0, 0),
+  upper = c(Inf, Inf, 1),
+  algorithm = "port",
+  trace = TRUE,
+  control = list(warnOnly = TRUE) # very rarely, the algorithm otherwise produce an error in small data sets which are such that the estimated value of W' is near zero
+)
+
+# Fit power-law model via linear-regression 
+# based on the power--duration relationship:
+ols_pow <- lm(formula = I(log(power)) ~ I(log(duration)), data = data_kipchoge)
+speed     <- exp(coef(ols_pow))[1]
+endurance <- coef(ols_pow)[2] + 1
+
+durations <- c(0, 0.1, 0.5, seq(from = 1, to = max(data_kipchoge$duration) * 1.05, length = 250))
+fitted_pow <- 
+  tibble(duration = durations, 
+         power = speed * durations^(endurance - 1),
+         model = "Power law")
+fitted_lj  <- 
+  tibble(duration = durations, 
+         power = pd_lj(durations, coef(nls_lj)[1], coef(nls_lj)[2], coef(nls_lj)[3]),
+         model = "Luttikholt \\& Jones (2022)")
+
+kipchoge_fitted_tbl <- bind_rows(fitted_pow, fitted_lj)
+
+coords <- c(threshold, pd_lj(threshold, coef(nls_lj)[1], coef(nls_lj)[2], coef(nls_lj)[3]))
+label_coords <- coords + c(3, 0.2)
+
+# Inset plot:
+kipchoge_fitted_tbl %>%
+  ggplot(mapping = aes(x = duration, y = power, colour = model)) +
+  geom_point(data = data_kipchoge, mapping = aes(x = duration, y = power),
+             inherit.aes = FALSE,
+             colour = "black", size = 0.4) + 
+  geom_line(show.legend = FALSE) +
+  geom_vline(xintercept = threshold, linetype = "dotted") +
+  scale_colour_manual(breaks = c("Luttikholt \\& Jones (2022)", "Power law"),
+                      values = c(col_hyp, col_pow)) +
+  scale_x_continuous(expand = c(0, 0),
+                     breaks = 60 * c(0, 60, 120),
+                     labels = c(0, 60, 120)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(x = "", y = "", colour = "") +
+  coord_cartesian(ylim = c(5, 8), 
+                  xlim = c(0, 120 * 60 * 1.05)) +
+  theme(
+    plot.margin = unit(c(1, 1, 1, 1), "pt"),
+    axis.title.x = element_text(margin = margin(t = 9)),
+    axis.title.y = element_text(margin = margin(r = 9)),
+    legend.margin = margin(0, 0, 0, 0),
+    panel.background = element_rect(fill = "transparent"), 
+    plot.background = element_rect(fill = "transparent", color = NA),
+    text = element_text(size = 8)
+  ) -> plot_lj_inset
+
+kipchoge_fitted_tbl %>%
+  ggplot(mapping = aes(x = duration, y = power, colour = model)) +
+  geom_point(data = data_kipchoge, mapping = aes(x = duration, y = power),
+             inherit.aes = FALSE,
+             colour = "black") + 
+  geom_line() +
+  geom_vline(xintercept = threshold, linetype = "dotted") +
+  scale_colour_manual(breaks = c("Luttikholt \\& Jones (2022)", "Power law"),
+                      values = c(col_hyp, col_pow)) +
+  scale_x_continuous(expand = c(0, 0),
+                     breaks = c(60 * c(0, 10, 20), threshold),
+                     labels = c(0, 10, 20, threshold_symbol)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(x = "Duration [minutes]", y = "Velocity [m/s]", colour = "Model") +
+  coord_cartesian(ylim = c(6, 7.5), xlim = c(0, 20 * 60)) +
+  annotation_custom(
+    ggplotGrob(plot_lj_inset), 
+    xmin = 6.5 * 60, xmax = 20 * 60, ymin = 6.5, ymax = 7.5
+  ) -> plot_lj
+
+save_image(plot_lj, "lj", width = 4.5, height = 2.3)
+```
+
+
+
+
+
+```{r}
+# ################################################################################
+# # Illustration of the "kinks" in the power--duration curve that should exist
+# # if the hyperbolic shape in the 2--15 minute range is to be believed.
+# ################################################################################
+# 
+# options(scipen = 10000) # avoid scientific notation
+# 
+# # Data
+# # ---------------------------------------------------------------------------- #
+# data <- tibble(power = c(435, 333), duration = c(180, 720))
+#   
+# # Power-law model
+# # ---------------------------------------------------------------------------- #
+# aux <- lm(data = data, I(log(power)) ~ I(log(duration)))
+# speed          <- exp(coef(aux)[1])
+# endurance      <- coef(aux)[2] + 1
+# fatigue_factor <- 1 / endurance
+# 
+# # Evaluate power--duration curve for the power-law model
+# get_power_pow <- function(t) speed * t^(endurance - 1)
+# 
+# # Hyperbolic model for comparison
+# # ---------------------------------------------------------------------------- #
+# aux <- lm(data = data, power ~ I(1 / duration))
+# cp      <- coef(aux)[1]
+# w_prime <- coef(aux)[2]
+# 
+# # Evaluate power--duration curve for the power-law model
+# get_power_hyp <- function(t) w_prime / t + cp
+# 
+# data_durations_short <- 60 * c(1, 2)
+# data_durations_long  <- 60 * c(15, 30)
+# data_short <- tibble(power = c(get_power_pow(data_durations_short[1]), get_power_hyp(data_durations_short[2])), duration = data_durations_short)
+# data_long  <- tibble(power = c(get_power_hyp(data_durations_long[1]), get_power_pow(data_durations_long[2])), duration = data_durations_long)
+# 
+# aux <- lm(data = data_short, I(log(power)) ~ I(log(duration)))
+# speed_short     <- exp(coef(aux)[1])
+# endurance_short <- coef(aux)[2] + 1
+# 
+# aux <- lm(data = data_long, I(log(power)) ~ I(log(duration)))
+# speed_long      <- exp(coef(aux)[1])
+# endurance_long  <- coef(aux)[2] + 1
+# 
+# get_power_pow_short <- function(t) speed_short * t^(endurance_short - 1)
+# get_power_pow_long  <- function(t) speed_long * t^(endurance_long - 1)
+# 
+# # Values for the first axis:
+# durations_short  <- 60 * seq(from = 0, to = 2, length = 20) 
+# durations_medium <- 60 * seq(from = 2, to = 15, length = 100) 
+# durations_long   <- 60 * seq(from = 15, to = 30, length = 100)
+# durations <- c(durations_short, durations_medium, durations_long)
+# duration_cat <- c(rep("short", times = length(durations_short)), 
+#                   rep("medium", times = length(durations_medium)),
+#                   rep("long", times = length(durations_long)))
+# 
+# my_tbl <- tibble(
+#   duration = rep(durations, times = 2),
+#   power = c(get_power_pow_short(durations_short), get_power_hyp(durations_medium), get_power_pow_long(durations_long), get_power_pow(durations)),
+#   duration_cat = rep(duration_cat, times = 2),
+#   model = c(rep("Hyperbolic", times = length(durations_short) + length(durations_medium)), 
+#             rep("Hyperbolic (continuation)", times = length(durations_long)),
+#             rep(c("Power law"), times = length(durations)))
+# )
+# 
+# tick_power <- c(200, 300, 400, 500, 600)
+# tick_duration <- 60 * c(0, 5, 10, 15, 20, 25, 30)
+# label_duration <- tick_duration / 60
+# lim_power <- c(min(tick_power), 500)
+# lim_duration <- c(0, 60 * 25)
+# 
+# coords       <- c(durations_long[1], get_power_pow_long(durations_long[1]))
+# label_coords <- coords + c(0, 70)
+# 
+# col_hyp <- "#F8766D"
+# col_pow <- "#00BFC4"
+# 
+# my_tbl %>% 
+#   filter(model %in% c("Hyperbolic", "Power law")) %>%
+#   ggplot(mapping = aes(x = duration, y = power, colour = model)) +
+#   geom_line() +
+#   geom_line(data = filter(my_tbl, model == "Hyperbolic (continuation)"), linetype = "dashed", colour = col_hyp) +
+#   scale_x_continuous(expand = c(0, 0), breaks = tick_duration, labels = label_duration) +
+#   scale_y_continuous(expand = c(0, 0), breaks = tick_power) +
+#   coord_cartesian(xlim = lim_duration, ylim = lim_power) +
+#   labs(x = "Duration [minutes]", y = "Power [J/s]", colour = "Model") +
+#   annotate(
+#     geom       = "text", 
+#     x          = label_coords[1],
+#     y          = label_coords[2], 
+#     label      = "Implied `kink'\nin the data",
+#     hjust      = 0.8, vjust = 0,
+#     lineheight = 1,
+#     colour     = col_hyp
+#     ) + 
+#   annotate(
+#     geom       = "curve", 
+#     xend       = coords[1],
+#     yend       = coords[2], 
+#     x          = label_coords[1], 
+#     y          = label_coords[2] - 10,
+#     curvature  = -0.2, 
+#     arrow      = arrow(length = unit(2, "mm")),
+#     alpha      = 1,
+#     colour     = col_hyp
+#   ) +
+#   annotate(
+#     geom       = "curve", 
+#     xend       = last(durations_medium),
+#     yend       = 220, 
+#     x          = first(durations_medium) + (last(durations_medium) - first(durations_medium)) / 2, 
+#     y          = 220,
+#     curvature  = 0, 
+#     arrow      = arrow(length = unit(2, "mm")),
+#     alpha      = 1,
+#     colour     = col_hyp
+#   ) +
+#   annotate(
+#     geom       = "curve", 
+#     xend       = first(durations_medium),
+#     yend       = 220, 
+#     x          = first(durations_medium) + (last(durations_medium) - first(durations_medium)) / 2, 
+#     y          = 220,
+#     curvature  = 0, 
+#     arrow      = arrow(length = unit(2, "mm")),
+#     alpha      = 1,
+#     colour     = col_hyp
+#   ) + 
+#   annotate(
+#     geom       = "text", 
+#     x          = first(durations_medium) + (last(durations_medium) - first(durations_medium)) / 2,
+#     y          = 230, 
+#     label      = "Presumed\nrange of validity",
+#     hjust      = 0.5, vjust = 0,
+#     lineheight = 1,
+#     colour     = col_hyp
+#   ) -> p
+# 
+# tikz(
+#   file = file.path(path_to_figure_folder, "implied_kink.tex"),
+#   standAlone = FALSE,
+#   width = 4,
+#   height = 2.5
+# )
+# print(p)
+# dev.off()
+# 
+# 
+
+
+
+# my_theme <- theme_classic() +
+#   theme(plot.margin = unit(c(5.5, 13, 5.5, 5.5), "pt"))
+# 
+# pd_hyp_tbl %>%
+#   ggplot(mapping = aes(x = duration, y = power)) +
+#   geom_line(colour = col_hyp) +
+#   geom_hline(yintercept = cp, linetype = "dotted", colour = col_hyp) +
+#   coord_cartesian(xlim = lim_duration, ylim = lim_power) +
+#   scale_x_continuous(expand = expand_duration, breaks = tick_duration) +
+#   scale_y_continuous(expand = expand_power, breaks = c(tick_power, cp), labels = c(tick_power, "$\\mathit{CP}$")) +
+#   labs(x = label_duration, y = label_power) +
+#   my_theme -> pd_hyp
+
+
+# save_image(pd_hyp, "test")
+
+```
+
+# Relationship with the functional threshold power (FTP) from Allen et al. (2019)
+
+```{r}
+# Durations in seconds
+DURATION_MIN <- 1
+DURATION_MAX <- 60 * 80
+
+FATIGUE_FACTOR <- 1.04834 # fatigue factor from Riegel (1981) for cycling, men (all)
+SPEED <- 1200 # specified such that the cyclist can sustain 1200W over one second (just to have a concrete example)
+
+# Computes the velocity over a given duration
+# according to the power-law model
+compute_power_pow <- function(t, speed, fatigue_factor) {
+  return(speed * t^(1 / fatigue_factor - 1))
+}
+
+# computes P(t_2) / P(t_1), i.e. the ratio of 
+# the maximal average power output for duration t_2 over
+# the maximal average power output for duration t_1
+compute_power_ratio_pow <- function(d1, d2, fatigue_factor) {
+  return((d2 / d1)^(fatigue_factor - 1))
+}
+
+FTP_DURATIONS <- 60 * c(20, 60)
+FTP_POWERS    <- compute_power_pow(FTP_DURATIONS, speed = SPEED, fatigue_factor = FATIGUE_FACTOR)
+N_RULES <- length(FTP_POWERS)
+ftp_tbl <- tibble(duration = double(), power = double(), method = character()) 
+
+for (t in seq(from = DURATION_MIN, to = DURATION_MAX, length = 100)) {
+  ftp_tbl %<>% bind_rows(tibble(duration = t, 
+                                power = compute_power_pow(t, speed = SPEED, fatigue_factor = FATIGUE_FACTOR), 
+                                method = "Power law"))
+}
+
+ftp_tbl_aux <- tibble(
+  x =    c(FTP_DURATIONS, rep(0, times = N_RULES)),
+  y =    c(rep(0, times = N_RULES), FTP_POWERS),
+  xend = c(FTP_DURATIONS, FTP_DURATIONS),
+  yend = c(FTP_POWERS, FTP_POWERS)
+)
+
+
+my_theme <- theme_classic()# +
+  # theme(legend.position = c(0.81, 0.97))
+
+
+ftp_tbl %>%
+  filter(method == "Power law") %>%
+  ggplot(mapping = aes(x = duration, y = power, colour = method)) +
+  geom_line() +
+  geom_segment(data = ftp_tbl_aux, 
+               mapping = aes(x = x, y = y, xend = xend, yend = yend), 
+               linetype = "dotted", 
+               colour = "black",
+               inherit.aes = FALSE) +
+  annotate("text", x = 56 * 60, y = 873, label = "$\\dfrac{\\mathrm{MMP}_{60}}{\\mathrm{MMP}_{20}} \\approx 95.06\\,\\%$") +
+  coord_cartesian(ylim = c(800, 910)) +
+  labs(x = "Duration [minutes]", y = "Power [J/s]", colour = "") +
+  scale_x_continuous(breaks = 60 * c(0, 20, 60), 
+                     labels = c(0, 20, 60),
+                     expand = c(0, 0)) +
+  scale_y_continuous(breaks = FTP_POWERS, 
+                     labels = c("$\\mathrm{MMP}_{20}$", "$\\mathrm{MMP}_{60}$")) +
+  scale_colour_manual(
+    values = c(col_pow),
+    guide = guide_legend(
+      override.aes = list(
+        linetype = c("solid"),
+        shape = c(NA)
+      )
+    )
+  ) +
+  my_theme -> plot_ftp
+
+save_image(plot_ftp, "ftp", width = 4, height = 2.2)
+```
+
+
+
+# Jeff Galloway's Magic Mile (http://www.jeffgalloway.com/training/magic-mile/)
+ 
+Jeff Galloway's Magic Mile Race Prediction Formula vs the power-law model with fatigue factor suggested by Riegel (1981)
+
+
+```{r}
+FATIGUE_FACTOR <- 1.07732 # fatigue factor from Riegel (1981) for running, men (all)
+# SPEED <- MILE_IN_M / (5 * 60)^(1 / FATIGUE_FACTOR) # specified such that the runner can run a mile in 5 minutes (just to have a concrete example -- the results do not depend on the value of the speed parameter)
+
+# Computes the velocity over a given distance 
+# according to the power-law model
+compute_velocity_pow <- function(d, speed, fatigue_factor) {
+  return((speed / d^(1 - 1 / fatigue_factor))^fatigue_factor)
+}
+
+# computes V(d_1) / V(d_2), i.e. the ratio of pace for
+# distance d_2 over pace for distance d_1)
+compute_pace_ratio_pow <- function(d1, d2, fatigue_factor) {
+  return((d2 / d1)^(fatigue_factor - 1))
+}
+
+d1 <- MILE_IN_M
+
+compute_pace_ratio_pow(d1 = d1, d2 = 10000, 
+                       fatigue_factor = FATIGUE_FACTOR) # vs   x 1.15 according to JG
+compute_pace_ratio_pow(d1 = d1, d2 = 10 * MILE_IN_M, 
+                       fatigue_factor = FATIGUE_FACTOR) # vs   x 1.175 according to JG
+compute_pace_ratio_pow(d1 = d1, d2 = 21097.5, 
+                       fatigue_factor = FATIGUE_FACTOR) # vs   x 1.20 according to JG
+compute_pace_ratio_pow(d1 = d1, d2 = 42195, 
+                       fatigue_factor = FATIGUE_FACTOR) # vs   x 1.30 according to JG
+
+
+# mile_velocity <- compute_velocity_pow(MILE_IN_M, speed = SPEED, 
+#                                       fatigue_factor = FATIGUE_FACTOR)
+
+JG_DISTANCES   <- c(MILE_IN_M, 10000, 10 * MILE_IN_M, 21097.5, 42195)
+JG_MULTIPLIERS <- c(1, 1.15, 1.175, 1.20, 1.30) # Galloway's multipliers corresponding ot the distances above
+
+MILE_TIME_IN_MINUTES     <- c(10, 8, 6, 4) # the runner can run a mile in 4, 6, 8, 10 minutes
+MILE_TIME_IN_S           <- MILE_TIME_IN_MINUTES * 60
+MILE_VELOCITY_IN_M_PER_S <- 1 / (MILE_TIME_IN_S / MILE_IN_M)
+SPEED                    <- (MILE_VELOCITY_IN_M_PER_S * MILE_IN_M^(FATIGUE_FACTOR - 1))^(1 / FATIGUE_FACTOR)
+SPEED_CATEGORY           <- paste0(MILE_TIME_IN_MINUTES, "\\,min/mile")
+
+jg_tbl <- tibble()
+for (s in 1:length(SPEED)) {
+  
+  jg_tbl %<>% bind_rows(
+      tibble(
+        distance = JG_DISTANCES, 
+        velocity = MILE_VELOCITY_IN_M_PER_S[s] / JG_MULTIPLIERS, 
+        method = "Galloway",
+        speed_category = SPEED_CATEGORY[s]
+      )
+    )
+    
+  for (d in seq(from = 100, to = 43000, length = 100)) {
+    jg_tbl %<>% bind_rows(
+        tibble(
+          distance = d, 
+          velocity = compute_velocity_pow(
+            d, 
+            speed = SPEED[s],
+            fatigue_factor = FATIGUE_FACTOR
+          ),
+          method = "Power law",
+          speed_category = SPEED_CATEGORY[s]
+        )
+      )
+  }
+}
+
+jg_tbl %<>%
+  mutate(speed_category = factor(speed_category, levels = SPEED_CATEGORY))
+
+# my_theme <- theme_classic() +
+  # theme(legend.position = c(0.75, 0.92))
+
+jg_tbl %>%
+  filter(method == "Power law") %>%
+  ggplot(mapping = aes(x = distance, y = velocity, colour = method)) +
+  geom_line() +
+  geom_point(data = filter(jg_tbl, method == "Galloway"), 
+             mapping = aes(x = distance, y = velocity, colour = method), shape = 19) +
+  labs(x = "Distance [km]", y = "Velocity [m/s]", colour = "") +
+  scale_x_continuous(breaks = 1000 * c(0, 10, 20, 30, 40), 
+                     labels = c(0, 10, 20, 30, 40)) +
+  # scale_y_continuous(breaks = NULL) +
+  scale_colour_manual(
+    values = c("black", col_pow),
+    guide = guide_legend(
+      override.aes = list(
+        group = c("Galloway", "Power law"),
+        linetype = c("blank", "solid"),
+        shape = c(19, NA)
+      )
+    )
+  ) +
+  facet_grid(~speed_category) +
+  # my_theme 
+  theme_classic() -> plot_galloway
+
+save_image(plot_galloway, "galloway", width = 6.2, height = 2.3)
+```
+
+
+
+
+
+<!-- ```{r} -->
+<!-- FATIGUE_FACTOR <- 1.07732 # fatigue factor from Riegel (1981) for running, men (all) -->
+<!-- SPEED <- MILE_IN_M / (5 * 60)^(1 / FATIGUE_FACTOR) # specified such that the runner can run a mile in 5 minutes (just to have a concrete example -- the results do not depend on the value of the speed parameter) -->
+
+<!-- # Computes the velocity over a given distance  -->
+<!-- # according to the power-law model -->
+<!-- compute_velocity_pow <- function(d, speed, fatigue_factor) { -->
+<!--   return((speed / d^(1 - 1 / fatigue_factor))^fatigue_factor) -->
+<!-- } -->
+
+<!-- # computes V(d_1) / V(d_2), i.e. the ratio of pace for -->
+<!-- # distance d_2 over pace for distance d_1) -->
+<!-- compute_pace_ratio_pow <- function(d1, d2, fatigue_factor) { -->
+<!--   return((d2 / d1)^(fatigue_factor - 1)) -->
+<!-- } -->
+
+<!-- d1 <- MILE_IN_M -->
+
+<!-- compute_pace_ratio_pow(d1 = d1, d2 = 10000,  -->
+<!--                        fatigue_factor = FATIGUE_FACTOR) # vs   x 1.15 according to JG -->
+<!-- compute_pace_ratio_pow(d1 = d1, d2 = 10 * MILE_IN_M,  -->
+<!--                        fatigue_factor = FATIGUE_FACTOR) # vs   x 1.175 according to JG -->
+<!-- compute_pace_ratio_pow(d1 = d1, d2 = 21097.5,  -->
+<!--                        fatigue_factor = FATIGUE_FACTOR) # vs   x 1.20 according to JG -->
+<!-- compute_pace_ratio_pow(d1 = d1, d2 = 42195,  -->
+<!--                        fatigue_factor = FATIGUE_FACTOR) # vs   x 1.30 according to JG -->
+
+
+<!-- mile_velocity <- compute_velocity_pow(MILE_IN_M, speed = SPEED,  -->
+<!--                                       fatigue_factor = FATIGUE_FACTOR) -->
+
+<!-- JG_DISTANCES   <- c(MILE_IN_M, 10000, 10 * MILE_IN_M, 21097.5, 42195) -->
+<!-- JG_MULTIPLIERS <- c(1, 1.15, 1.175, 1.20, 1.30) # Galloway's multipliers corresponding ot the distances above -->
+<!-- jg_tbl <- tibble(distance = JG_DISTANCES,  -->
+<!--                  velocity = mile_velocity / JG_MULTIPLIERS,  -->
+<!--                  method = "Galloway") -->
+
+<!-- for (d in seq(from = 100, to = 43000, length = 100)) { -->
+<!--   jg_tbl %<>% bind_rows(tibble(distance = d,  -->
+<!--                                velocity = compute_velocity_pow(d, speed = SPEED, fatigue_factor = FATIGUE_FACTOR), -->
+<!--                                method = "Power law")) -->
+<!-- } -->
+
+
+
+<!-- my_theme <- theme_classic() + -->
+<!--   theme(legend.position = c(0.75, 0.92)) -->
+
+<!-- jg_tbl %>% -->
+<!--   filter(method == "Power law") %>% -->
+<!--   ggplot(mapping = aes(x = distance, y = velocity, colour = method)) + -->
+<!--   geom_line() + -->
+<!--   geom_point(data = filter(jg_tbl, method == "Galloway"),  -->
+<!--              mapping = aes(x = distance, y = velocity, colour = method), shape = 19) + -->
+<!--   labs(x = "Distance [km]", y = "Velocity [m/s]", colour = "") + -->
+<!--   scale_x_continuous(breaks = 1000 * c(0, 10, 20, 30, 40),  -->
+<!--                      labels = c(0, 10, 20, 30, 40)) + -->
+<!--   scale_y_continuous(breaks = NULL) + -->
+<!--   scale_colour_manual( -->
+<!--     values = c("black", col_pow), -->
+<!--     guide = guide_legend( -->
+<!--       override.aes = list( -->
+<!--         linetype = c("blank", "solid"), -->
+<!--         shape = c(19, NA) -->
+<!--       ) -->
+<!--     ) -->
+<!--   ) + -->
+<!--   my_theme -> plot_galloway -->
+
+<!-- save_image(plot_galloway, "galloway", width = 2.1, height = 1.7) -->
+
+
+<!-- ``` -->
+
+
+
+
+# Jack Daniels' "VDOT" Caclulator
+See, e.g., http://www.simpsonassociatesinc.com/runningmath1.htm
+
+```{r}
+# Parameters in Jack Daniels' model:
+alpha <- c(0.8, 0.2989558, -0.1932605, 0.1894393, -0.012778)
+beta  <- c(-4.60, 0.182258, 0.000104)
+
+# Functional relationships:
+h <- function(t) {
+  alpha[1] + alpha[2] * exp(alpha[3] * t / 60) + alpha[4] * exp(alpha[5] * t / 60)
+}
+g <- function(d, t) {sum(beta * (d * 60 / t)^(0:2))}
+
+D0 <- rep(21097.5, times = 4) # previous races are half marathons
+T0 <- 60 * c(120, 90, 75, 60) # finishing times (in seconds) in these races
+VDOT <- rep(NA, times = length(D0))
+for (v in seq_along(VDOT)) {
+  VDOT[v] <- g(D0[v], T0[v]) / h(T0[v]) # implied VDOT values from the previous races
+}
+VDOT_LABELS <- str_c(
+  T0 / 60, " minutes"
+)
+# VDOT_LABELS <- str_c(
+#   "($\\mathrm{{\\dot{V}O}_{2\\mathrm{max}}} = \\mathrm{VDOT} \\approx ", 
+#   round(VDOT, digits = 0), 
+#   "$)"
+# )
+
+DISTANCE <- seq(from = 1500, to = 42195, length = 200) # distances used for plotting 
+
+# Power-law model parameters:
+E <- 1 / 1.06
+
+
+daniels_tbl <- tibble()
+riegel_tbl  <- tibble()
+
+for (v in seq_along(VDOT)) {
+    
+  S <- D0[v] / T0[v]^E
+    
+  for (d in seq_along(DISTANCE)) {
+    # Fitting the Jack Daniels formula
+    f <- function(t) {
+      g(DISTANCE[d], t) / VDOT[v] - h(t)
+    }
+    daniels_tbl %<>% bind_rows(
+      tibble(
+        vdot     = VDOT[v],
+        vdot_cat = VDOT_LABELS[v],
+        distance = DISTANCE[d], 
+        duration = uniroot(f, c(0, 60 * 60 * 24))$root, # in seconds
+        velocity = distance / duration
+      )
+    )    
+  }
+
+  for (d in seq_along(DISTANCE)) {
+    riegel_tbl %<>% bind_rows(
+      tibble(
+        vdot      = VDOT[v],
+        vdot_cat  = VDOT_LABELS[v],
+        distance  = DISTANCE[d], 
+        duration  = (distance / S)^(1 / E),
+        velocity  = distance / duration,
+        speed     = S,
+        endurance = E
+      )
+    )
+  }
+}
+
+
+# Merging the two tibbles:
+bind_rows(
+  mutate(daniels_tbl, method = "Daniels"), 
+  mutate(riegel_tbl, method = "Power law")
+) %>%
+  mutate(vdot_cat = factor(vdot_cat, levels = VDOT_LABELS)) %>%
+  ggplot(mapping = aes(x = distance, y = velocity, colour = method)) +
+  geom_line() +
+  labs(x = "Distance [km]", y = "Velocity [m/s]", colour = "Model") +
+  scale_x_continuous(breaks = 1000 * c(0, 10, 20, 30, 40), 
+                     labels = c(0, 10, 20, 30, 40)) +
+  facet_grid(~vdot_cat) +
+   scale_colour_manual(
+    values = c("black", col_pow)
+  ) + 
+  theme_classic() -> plot_daniels
+
+
+# save_image(plot_daniels, "daniels", width = 5, height = 3)
+save_image(plot_daniels, "daniels", width = 6.2, height = 2.3)
+
+```
+
+
+
+
+
+
+
+# Kurt Jensen's peformance predictor for rowing
+
+```{r}
+# Calculates the duration (in seconds) associated with a given power
+# (in J/s) and distance (in m) via the formula used in the original
+# spreadsheet from https://www.researchgate.net/publication/325090221_Critical_Power_Calculator_for_C2_row_and_ski_ergometers_with_datasets.
+compute_equivalent_duration <- function(power, distance) {
+  return((2.8 / power)^(1 / 3) * distance)
+}
+# Same as above but calculates the equivalent distance from power and duration.
+compute_equivalent_distance <- function(power, duration) {
+  return((power / 2.8)^(1 / 3) * duration)
+}
+# Same as above but calculates the equivalent power from duration and distance.
+compute_equivalent_power <- function(duration, distance) {
+  return(2.8 * (distance / duration)^3)
+}
+```
+
+```{r}
+MULTIPLIER_JENSEN <- c(1.73, 1.53, 1, 0.85, 0.76)
+DURATION_JENSEN   <- c(10, 60, NA, NA, 3600)
+DISTANCE_JENSEN   <- c(NA, NA, 2000, 6000, NA)
+FATIGUE_FACTOR <- 1 / 0.85
+
+compute_power_from_duration_pow <- function(duration, S, E) {
+  S * duration^(E - 1)
+}
+compute_power_from_distance_pow <- function(distance, S, E) {
+  (S * (distance * 2.8^(1 / 3))^(E - 1))^(3 / (E + 2))
+}
+compute_S_from_power_and_distance_pow<- function(power, distance, E) {
+  power^((2 + E) / 3) * (distance * 2.8^(1 / 3))^(1 - E)
+}
+
+
+predict_jen <- function(power_over_2k) {
+  tibble(
+    power = MULTIPLIER_JENSEN * power_over_2k, 
+    duration = DURATION_JENSEN, 
+    distance = DISTANCE_JENSEN
+  ) %>%
+    mutate(
+      duration = if_else(
+        is.na(duration),
+        compute_equivalent_duration(power, distance),
+        duration
+      )
+    ) %>%
+    mutate(
+      distance = if_else(
+        is.na(distance),
+        compute_equivalent_distance(power, duration),
+        distance
+      )
+    ) %>%
+    select(duration, power)
+}
+
+
+
+POWER_OVER_2000_M <- c(100, 200, 300, 400) # the power output that the rower can sustain over 2000 metres
+SPEED             <- compute_S_from_power_and_distance_pow(POWER_OVER_2000_M, 2000, 1 / FATIGUE_FACTOR)# implied speed parameter of the power-law model
+SPEED_CATEGORY    <- paste0(POWER_OVER_2000_M, "\\,J/s")
+
+jen_tbl <- tibble()
+for (s in 1:length(SPEED)) {
+  
+  jen_tbl %<>% bind_rows(
+      predict_jen(POWER_OVER_2000_M[s]) %>%
+        mutate(method = "Jensen") %>% 
+        mutate(speed_category = SPEED_CATEGORY[s])
+    )
+    
+  for (t in seq(from = 5, to = 60 * 65, length = 100)) {
+    jen_tbl %<>% bind_rows(
+        tibble(
+          duration = t, 
+          power = compute_power_from_duration_pow(
+            duration = t, 
+            S = SPEED[s],
+            E = 1 / FATIGUE_FACTOR
+          ),
+          method = "Power law",
+          speed_category = SPEED_CATEGORY[s]
+        )
+      )
+  }
+}
+
+jen_tbl %<>%
+  mutate(speed_category = factor(speed_category, levels = SPEED_CATEGORY)) %>%
+  mutate(distance = compute_equivalent_distance(power, duration))
+
+# my_theme <- theme_classic() +
+  # theme(legend.position = c(0.75, 0.92))
+
+jen_tbl %>%
+  filter(method == "Power law") %>%
+  # ggplot(mapping = aes(x = distance, y = power, colour = method)) +
+  # geom_line() +
+  # geom_point(data = filter(jen_tbl, method == "Jensen"), 
+  #            mapping = aes(x = distance, y = power, colour = method), shape = 19) +
+  # labs(x = "distance [km]", y = "Power [J/s]", colour = "") +
+  # scale_x_continuous(breaks = 1000 * c(0, 10, 20, 30, 40), 
+  #                    labels = c(0, 10, 20, 30, 40)) +
+  ggplot(mapping = aes(x = duration, y = power, colour = method)) +
+  geom_line() +
+  geom_point(data = filter(jen_tbl, method == "Jensen"), 
+             mapping = aes(x = duration, y = power, colour = method), shape = 19) +
+  labs(x = "Duration [minutes]", y = "Power [J/s]", colour = "") +
+  scale_x_continuous(breaks = 60 * c(0, 30, 60), 
+                     labels = c(0, 30, 60)) +
+  scale_colour_manual(
+    values = c("black", col_pow),
+    guide = guide_legend(
+      override.aes = list(
+        group = c("Jensen", "Power law"),
+        linetype = c("blank", "solid"),
+        shape = c(19, NA)
+      )
+    )
+  ) +
+  facet_grid(~speed_category) +
+  # my_theme 
+  theme_classic() -> plot_jensen
+
+save_image(plot_jensen, "jensen", width = 6.2, height = 2.3)
+```
+
+
+
+
+```{r}
+# MULTIPLIER_JENSEN <- c(1.73, 1.53, 1, 0.85, 0.76)
+# DURATION_JENSEN   <- c(10, 60, NA, NA, 3600)
+# DISTANCE_JENSEN   <- c(NA, NA, 2000, 6000, NA)
+# FATIGUE_FACTOR <- 1 / 0.85
+# 
+# compute_power_from_duration_pow <- function(duration, S, E) {
+#   S * duration^(E - 1)
+# }
+# compute_power_from_distance_pow <- function(distance, S, E) {
+#   (S * (distance * 2.8^(1 / 3))^(E - 1))^(3 / (E + 2))
+# }
+# compute_S_from_power_and_distance_pow<- function(power, distance, E) {
+#   power^((2 + E) / 3) * (distance * 2.8^(1 / 3))^(1 - E)
+# }
+# 
+# 
+# predict_jen <- function(power_over_2k) {
+#   tibble(
+#     power = MULTIPLIER_JENSEN * power_over_2k, 
+#     duration = DURATION_JENSEN, 
+#     distance = DISTANCE_JENSEN
+#   ) %>%
+#     mutate(
+#       duration = if_else(
+#         is.na(duration),
+#         compute_equivalent_duration(power, distance),
+#         duration
+#       )
+#     ) %>%
+#     mutate(
+#       distance = if_else(
+#         is.na(distance),
+#         compute_equivalent_distance(power, duration),
+#         distance
+#       )
+#     ) %>%
+#     mutate(multiplier = MULTIPLIER_JENSEN) %>%
+#     select(duration, distance, power, multiplier)
+# }
+# 
+
+
+
+
+# predict_pow <- function(power_over_2k) {
+#   
+#   E <- 0.85
+#   S <- compute_S_from_power_and_distance_pow(power = power_over_2k, distance = 2000, E = E) # calculated such that the power over 2k is equal to power_over_2k
+#   print(S)
+#   
+#   tibble(
+#     duration = DURATION_JENSEN, 
+#     distance = DISTANCE_JENSEN
+#   ) %>%
+#     mutate(
+#       power = if_else(
+#         is.na(duration), 
+#         compute_power_from_distance_pow(distance, S, E),
+#         compute_power_from_duration_pow(duration, S, E)
+#       )
+#     ) %>%
+#     mutate(
+#       duration = if_else(
+#         is.na(duration),
+#         compute_equivalent_duration(power, distance),
+#         duration
+#       )
+#     ) %>%
+#     mutate(
+#       distance = if_else(
+#         is.na(distance),
+#         compute_equivalent_distance(power, duration),
+#         distance
+#       )
+#     ) %>%
+#     mutate(multiplier = power / power_over_2k) %>%
+#     select(duration, distance, power, multiplier)
+# }
+
+# pow_2k <- 450
+# df_jen <- predict_jen(pow_2k)
+# df_pow <- predict_pow(pow_2k)
+# 
+#   
+# E0 <- 0.85
+# S0 <- compute_S_from_power_and_distance_pow(power = pow_2k, distance = 2000, E = E0) 
+# 
+# lm0 <- lm(data = df_jen, formula = I(log(power)) ~ I(log(duration)))
+# Shat <- as.double(exp(coef(lm0)[1]))
+# Ehat <- as.double(coef(lm0)[2] + 1)
+# 
+# df_jen %>%
+#   ggplot(mapping = aes(x = duration, y = power)) +
+#   geom_point() +
+#   geom_function(fun = function(x){S0 * x^(E0 - 1)})
+#   
+# 
+# df_jen
+# df_pow
+
+```
+
+
+# Implied modelling of fatigue
+
+```{r}
+library("tidyverse")
+library("magrittr")
+
+P <- 407 # constant power output (chosen such that it leads to exhaustion just after 1 hour in the hyperbolic model)
+
+## Hyperbolic (a.k.a. critical-power) model
+cp      <- 400
+w_prime <- 25500
+
+# Time to exhaustion
+tte_hyp <- w_prime / (P - cp)
+
+## Power-law (a.k.a. Riegel) model
+F <- 1.05
+E <- 1 / F
+
+# # Choose the speed parameter such that we have the same time to exhaustion as in the hyperbolic model for the above-specified constant power output.
+S <- P * tte_hyp^(1 - E)
+
+# # Choose the speed parameter such that both models imply the same maximal sustainable power output over 10 minutes
+# tte <- 10 * 60 # time to exhaustion in seconts
+# S <- w_prime * tte^(-E) + cp * tte^(1 - E) 
+
+# Time to exhaustion
+# tte_pow <- (S / P)^(1 / (1 - E))
+
+## Dynamic analysis
+times <- c(0, 45, 55, 60) * 60 # seconds
+durations <- seq(from = 1, to = 30 * 60, length = 100)
+
+my_tbl <- tibble()
+for (t in seq_along(times)) {
+
+  my_tbl %<>% bind_rows(
+      tibble(
+        time = times[t], 
+        exertion = times[t] * (P / S)^(1 / (1- E)), 
+        balance = 1 - exertion, 
+        par = (S^(1 / (1 - E)) - times[t] * P^(1 / (1 - E)))^(1 - E), 
+        duration = durations,
+        power = par * durations^(E - 1),
+        model = "Power law"
+      )
+    )
+  my_tbl %<>% bind_rows(
+      tibble(
+        time = times[t], 
+        exertion = times[t] * (P - cp) / w_prime,
+        balance = 1 - exertion, 
+        par = w_prime - (P - cp) * times[t],
+        duration = durations,
+        power = par /  durations + cp,
+        model = "Hyperbolic"
+      )
+    )
+}
+
+
+my_tbl %>%
+  mutate(time_label = paste0("After ", time / 60, " minutes")) %>%
+  ggplot(mapping = aes(x = duration, y = power, colour = model)) +
+  geom_line() +
+  coord_cartesian(ylim = c(300, 600), xlim = c(0, 60 * 30)) +
+  theme_classic() +
+#   scale_x_continuous(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(colour = "Model", x = "Duration [s]", y = "Power [J/s]") +
+  facet_grid(cols = vars(time_label)) -> plot_fatigue
+
+save_image(plot_fatigue, "fatigue", width = 6.2, height = 2.3)
+
+```
+
+
+```{r}
+
+```
+
+
