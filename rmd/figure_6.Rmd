@@ -1,0 +1,51 @@
+---
+title: "Modelling Human Endurance: Power Law vs Critical Power - Figure 6"
+output: html_document
+---
+
+```{r}
+library("here")
+library("tidyverse")
+library("scales")
+library("magrittr")
+library("janitor")
+library("RColorBrewer")
+library("cowplot")
+library("hms")
+
+options(scipen = 10000) # avoid scientific notation
+
+# Colours
+col_hyp <- "#F8766D"
+col_pow <- "#00BFC4"
+
+```
+
+
+```{r}
+fig_6_data <- readRDS(here("figure_data","fig_6_data.RDS"))
+fig_6_medium_data <- readRDS(file = here("figure_data","fig_6_medium_data.RDS"))
+fig_6_non_medium_data <- readRDS(file = here("figure_data","fig_6_non_medium_data.RDS"))
+
+fig_6_data %>%
+  ggplot() +
+  geom_line(mapping = aes(x = time, y = velocity, colour = model)) +
+  geom_point(data = fig_6_medium_data , mapping = aes(x = durations,y = power), colour = "black") +
+  geom_point(data = fig_6_non_medium_data , mapping = aes(x = durations,y = power), shape = 17, colour = "black") +
+  scale_x_continuous(trans = "log", breaks = c(60,120,240,600,1400,3600,7200), labels = c(1,2,4,10,30,60,120) ) +
+  scale_y_continuous(trans = "log", breaks = c(5,6,7,8)) +
+  coord_cartesian(xlim =c(60,7800), ylim = c(5,8)) +
+  labs(x = "Duration [minutes]", y = "Velocity [m/s]", colour = "") +
+  scale_colour_manual(
+    values = c(col_hyp,col_pow),
+    guide = guide_legend(
+      override.aes = list(
+        linetype = c("solid"),
+        shape = c(NA)
+      )
+    )
+  )+
+  theme_classic()  +
+  facet_wrap(~athlete)
+
+```

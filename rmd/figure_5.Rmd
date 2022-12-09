@@ -1,0 +1,99 @@
+---
+title: "Modelling Human Endurance: Power Law vs Critical Power - Figure 5"
+output: html_document
+---
+
+```{r}
+library("here")
+library("tidyverse")
+library("scales")
+library("magrittr")
+library("janitor")
+library("RColorBrewer")
+library("cowplot")
+library("stats4") # provides nls() for non-linear least squares
+library("hms")
+
+options(scipen = 10000) # avoid scientific notation
+
+# Colours
+col_hyp <- "#F8766D"
+col_pow <- "#00BFC4"
+
+fig_5_data <- readRDS(here("figure_data","fig_5_data.RDS"))
+fig_5_medium_data <- fig_5_data %>%
+  filter(durations >= 120 & durations <= 840)
+fig_5_non_medium_data <- fig_5_data %>%
+  filter(durations < 120 | durations > 840)
+
+fig_5_model_data <- readRDS(here("figure_data","fig_5_model_data.RDS"))
+  
+```
+
+# Panel A
+
+```{r}
+t<- seq(from =1 , to = 10800, length = 500)
+T <- length(t)
+
+#############
+#  Panel A  #
+#############
+
+fig_5_model_data %>%
+  filter(time <= 8600) %>%
+  ggplot() +
+  geom_line(mapping = aes(x = time, y = distance, colour = model)) +
+  geom_point(data = fig_5_medium_data , mapping = aes(x = durations,y = work), colour = "black") +
+  geom_point(data = fig_5_non_medium_data , mapping = aes(x = durations,y = work), shape = 17, colour = "black") +
+  scale_x_continuous(expand = c(0,0),breaks = c(0,1200*c(1:7))) +
+  scale_y_continuous(expand = c(0, 0),
+                     breaks = c(0,10000*(1:4)),
+                     labels = c(0,10*(1:4))) +
+  coord_cartesian(xlim =c(0,7600), ylim = c(0,45000)) +
+  labs(x = "Duration [s]", y = "Distance [km]", colour = "") +
+  scale_colour_manual(
+    values = c(col_hyp,col_pow),
+    guide = guide_legend(
+      override.aes = list(
+        linetype = c("solid"),
+        shape = c(NA)
+      )
+    )
+  )+
+  theme_classic() +
+  theme(legend.position="none")
+```
+
+# Panel B
+
+```{r}
+#############
+#  Panel B  #
+#############
+
+fig_5_model_data %>%
+  filter(time <= 8600) %>%
+  ggplot() +
+  geom_line(mapping = aes(x = time, y = velocity, colour = model)) +
+  geom_point(data = fig_5_medium_data , mapping = aes(x = durations,y = power), colour = "black") +
+  geom_point(data = fig_5_non_medium_data , mapping = aes(x = durations,y = power), shape = 17, colour = "black") +
+  scale_x_continuous(expand = c(0,0),breaks = c(0,1200*c(1:7))) +
+  scale_y_continuous(expand = c(0, 0),
+                     breaks = c(5,5.5,6,6.5,7,7.5)) +
+  coord_cartesian(xlim =c(0,7600), ylim = c(5,7.5)) +
+  labs(x = "Duration [s]", y = "Velocity [m/s]", colour = "") +
+  scale_colour_manual(
+    values = c(col_hyp,col_pow),
+    guide = guide_legend(
+      override.aes = list(
+        linetype = c("solid"),
+        shape = c(NA)
+      )
+    )
+  )+
+  theme_classic() +
+  theme(legend.position=c(0.8,0.8))
+```
+
+

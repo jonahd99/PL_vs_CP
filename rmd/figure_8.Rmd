@@ -1,0 +1,37 @@
+---
+title: "Large-data study in cycling"
+output: html_document
+---
+
+```{r, include = FALSE}
+library("here")
+library("tidyverse")
+library("magrittr")
+library("lubridate")
+library("stats4")
+
+source(here("script", "compute_and_plot_errors.R"))
+
+```
+
+# Golden cheetah open dataset: 
+
+<https://github.com/GoldenCheetah/OpenData>
+
+
+```{r}
+df_errors_gc <- read_rds(here("figure_data", "df_errors_gc.Rds"))
+```
+
+
+```{r}
+plot_errors(
+  data = df_errors_gc,
+  file = file.path(path_to_figure_folder, "errors_df_errors_gc.tex"),
+  show.legend = TRUE
+) -> plot_gc
+plot_gc
+```
+
+
+

@@ -1,0 +1,110 @@
+---
+title: "Modelling Human Endurance: Power Law vs Critical Power - Figure 2"
+output: html_document
+---
+
+# Setup
+
+```{r}
+library("here")
+library("tidyverse")
+
+options(scipen = 10000) # avoid scientific notation
+
+# Colours
+col_hyp <- "#F8766D"
+col_pow <- "#00BFC4"
+
+```
+
+```{r}
+# Power-law model parameters:
+speed          <- 1200 # speed
+endurance      <- 0.8 # endurance 
+fatigue_factor <- 1 / endurance # fatigue factor
+
+# Values for the first axis:
+durations <- seq(from = 0.01, to = 15 * 60, length = 500) # duration
+works     <- seq(from = 0.01, to = 200000, length = 500) # work
+
+size_text <- "\\small"
+hjust_text <- -0.45
+vjust_text_upper <- 3
+vjust_text_lower <- 5
+vjust_text_upper_alt <- 12
+vjust_text_lower_alt <- 12
+col_text_pow <- "black" # col_pow
+
+label_pd_pow <- paste0(size_text, "$P = S^{E - 1}$")
+label_dp_pow <- paste0(size_text, "$T = \\biggl(\\dfrac{S}{P}\biggr)^{1 / (1 - E)}$")
+label_pw_pow <- paste0(size_text, "$P = S^F W^{1 - F}$")
+label_wp_pow <- paste0(size_text, "$W = \biggl(\\dfrac{S^F}{P}\\biggr)^{1 / (F - 1)}$")
+label_wd_pow <- paste0(size_text, "$W = S \\cdot T^E$")
+label_dw_pow <- paste0(size_text, "$T = \biggl(\\dfrac{W}{S}\biggr)^F$")
+  
+# Equivalent relationships for the power-law model:
+pd_pow_tbl <- tibble(duration = durations, power = speed * durations^(endurance - 1))
+pw_pow_tbl <- tibble(work = works, power = speed^fatigue_factor * works^(1 - fatigue_factor))
+wd_pow_tbl <- tibble(duration = durations, work = speed * durations^endurance)
+
+
+label_power    <- "Power [J/s]"
+label_duration <- "Duration [s]"
+label_work     <- "Work [kJ]"
+
+# Axis limits
+lim_power    <- c(0, 2000)
+lim_duration <- c(0, max(durations))
+lim_work     <- c(0, max(works))
+
+col_abline_pow <- "black"
+
+# Expansion
+expand_power    <- c(0, 0)
+expand_duration <- c(0, 0)
+expand_work     <- c(0, 0)
+
+tick_power      <- pretty(0:max(lim_power))
+tick_duration   <- pretty(0:max(lim_duration))
+tick_work       <- pretty(0:max(lim_work))
+tick_work_alt   <- tick_work[-(length(tick_work))]
+
+my_theme <- theme_classic() +
+  theme(plot.margin = unit(c(5.5, 13, 5.5, 5.5), "pt"))
+```
+
+# Figure 2A: Power-duration
+```{r}
+pd_pow_tbl %>%
+  ggplot(mapping = aes(x = duration, y = power)) +
+  geom_line(colour = col_pow) +
+  coord_cartesian(xlim = lim_duration, ylim = lim_power) +
+  scale_x_continuous(expand = expand_duration, breaks = tick_duration) +
+  scale_y_continuous(expand = expand_power, breaks = tick_power) +
+  labs(x = label_duration, y = label_power) +
+  my_theme
+```
+
+# Figure 2B: Power-work
+```{r}
+pw_pow_tbl %>%
+  ggplot(mapping = aes(x = work, y = power)) +
+  geom_line(colour = col_pow) +
+  coord_cartesian(xlim = lim_work, ylim = lim_power) +
+  scale_x_continuous(expand = expand_work, breaks = tick_work_alt, label = tick_work_alt / 1000) +
+  scale_y_continuous(expand = expand_power, breaks = tick_power) +
+  labs(x = label_work, y = label_power) +
+  my_theme
+```
+
+# Figure 2C: Work-duration
+```{r}
+wd_pow_tbl %>%
+  ggplot(mapping = aes(x = duration, y = work)) +
+  geom_line(colour = col_pow) +
+  coord_cartesian(xlim = lim_duration, ylim = lim_work) +
+  scale_x_continuous(expand = expand_work, breaks = tick_duration) +
+  scale_y_continuous(expand = expand_power, breaks = tick_work, labels = tick_work / 1000) +
+  labs(x = label_duration, y = label_work)+
+  my_theme 
+```

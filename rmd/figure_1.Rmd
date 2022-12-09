@@ -1,0 +1,115 @@
+---
+title: "Modelling Human Endurance: Power Law vs Critical Power - Figure 1"
+output: html_document
+---
+
+# Setup
+
+```{r}
+library("here")
+library("tidyverse")
+
+options(scipen = 10000) # avoid scientific notation
+
+# Colours
+col_hyp <- "#F8766D"
+col_pow <- "#00BFC4"
+```
+
+
+```{r}
+# Hyperbolic ("critical-power") model parameters:
+cp      <- 300 # critical power
+w_prime <- 25000 # W'
+
+# Values for the first axis:
+durations <- seq(from = 0.01, to = 15 * 60, length = 100) # duration
+works     <- seq(from = 0.01, to = 200000, length = 100) # work
+
+size_text <- "\\small"
+hjust_text <- -0.45
+vjust_text_upper <- 3
+vjust_text_lower <- 5
+vjust_text_upper_alt <- 12
+vjust_text_lower_alt <- 12
+col_text_hyp <- "black" # col_hyp
+
+
+label_pd_hyp <- paste0(size_text, "$P = \\dfrac{W'}{T} + \\mathit{CP}$")
+label_dp_hyp <- paste0(size_text, "$T = \\dfrac{W'}{P - \\mathit{CP}}$")
+label_pw_hyp <- paste0(size_text, "$P = \\dfrac{\\mathit{CP}}{1 - W' / W}$")
+label_wp_hyp <- paste0(size_text, "$W = \\dfrac{W'}{1 - \\mathit{CP} / P}$")
+label_wd_hyp <- paste0(size_text, "$W = W' + \\mathit{CP} \\cdot T$")
+label_dw_hyp <- paste0(size_text, "$T = \\dfrac{W'}{1 - \\mathit{CP} / P}$")
+
+
+# Equivalent relationships for the hyperbolic model:
+pd_hyp_tbl <- tibble(duration = durations, power = w_prime / durations + cp)
+pw_hyp_tbl <- tibble(work = works, power = cp / (1 - w_prime / works))
+wd_hyp_tbl <- tibble(duration = durations, work = w_prime + cp * durations)
+
+label_power    <- "Power [J/s]"
+label_duration <- "Duration [s]"
+label_work     <- "Work [kJ]"
+
+# Axis limits
+lim_power    <- c(0, 2000)
+lim_duration <- c(0, max(durations))
+lim_work     <- c(0, max(works))
+
+col_abline_hyp <- "black"
+
+# Expansion
+expand_power    <- c(0, 0)
+expand_duration <- c(0, 0)
+expand_work     <- c(0, 0)
+
+tick_power      <- pretty(0:max(lim_power))
+tick_duration   <- pretty(0:max(lim_duration))
+tick_work       <- pretty(0:max(lim_work))
+tick_work_alt   <- tick_work[-(length(tick_work))]
+
+my_theme <- theme_classic() +
+  theme(plot.margin = unit(c(5.5, 13, 5.5, 5.5), "pt"))
+```
+
+# Figure 1A: Power-duration
+```{r}
+pd_hyp_tbl %>%
+  ggplot(mapping = aes(x = duration, y = power)) +
+  geom_line(colour = col_hyp) +
+  geom_hline(yintercept = cp, linetype = "dotted", colour = col_abline_hyp) +
+  coord_cartesian(xlim = lim_duration, ylim = lim_power) +
+  scale_x_continuous(expand = expand_duration, breaks = tick_duration) +
+  scale_y_continuous(expand = expand_power, breaks = c(tick_power, cp), labels = c(tick_power, "$\\mathit{CP}$")) +
+  labs(x = label_duration, y = label_power) +
+  my_theme 
+```
+
+# Figure 1B: Power-work
+```{r}
+pw_hyp_tbl %>%
+  filter(work > w_prime) %>%
+  ggplot(mapping = aes(x = work, y = power)) +
+  geom_line(colour = col_hyp) +
+  geom_vline(xintercept = w_prime, linetype = "dotted", colour = col_abline_hyp) +
+  geom_hline(yintercept = cp, linetype = "dotted", colour = col_abline_hyp) +
+  coord_cartesian(xlim = lim_work, ylim = lim_power) +
+  scale_x_continuous(expand = expand_work, breaks = c(tick_work_alt, w_prime), labels = c(tick_work_alt / 1000, "$W'$")) +
+  scale_y_continuous(expand = expand_power, breaks = c(tick_power, cp), labels = c(tick_power, "$\\mathit{CP}$")) +
+  labs(x = label_work, y = label_power) +
+  my_theme 
+```
+
+# Figure 1C: Work-duration
+```{r}
+wd_hyp_tbl %>%
+  ggplot(mapping = aes(x = duration, y = work)) +
+  geom_line(colour = col_hyp) +
+  coord_cartesian(xlim = lim_duration, ylim = lim_work) +
+  scale_x_continuous(expand = expand_work, breaks = tick_duration) +
+  scale_y_continuous(expand = expand_power, breaks = c(tick_work, w_prime), labels = c(tick_work / 1000, "$W'$")) +
+  labs(x = label_duration, y = label_work) +
+  my_theme 
+
+```

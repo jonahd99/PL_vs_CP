@@ -1,0 +1,59 @@
+---
+title: "Figure 9 -- Large-data study in rowing"
+output: html_document
+
+---
+
+
+```{r}
+library("here")
+library("tidyverse")
+library("janitor")
+library("magrittr")
+library("readxl")
+
+source(here("script", "compute_and_plot_errors.R"))
+
+```
+
+
+
+# Dataset 1: Seiler's row and ski ergometer data set
+
+Data source: 
+<https://www.researchgate.net/publication/325090221_Critical_Power_Calculator_for_C2_row_and_ski_ergometers_with_datasets>
+
+
+# Dataset 2: Season's bests from nonathlon.om
+
+Data source: 
+<https://www.nonathlon.com>
+
+
+
+```{r}
+  df_errors_seiler    <- read_rds(here("data", "df_errors_seiler.Rds"))
+  df_errors_nonathlon <- read_rds(here("data", "df_errors_nonathlon.Rds"))
+```
+  
+
+```{r}
+plot_errors(
+  data = df_errors_seiler,
+  file = file.path(path_to_figure_folder, "errors_seiler.tex"),
+  width = 1.7,
+  show.legend = FALSE
+) -> plot_seiler
+plot_seiler
+
+plot_errors(
+  data = df_errors_nonathlon,
+  file = file.path(path_to_figure_folder, "errors_nonathlon.tex"),
+  width = 5,
+  show.legend = TRUE
+) -> plot_nonathlon
+plot_nonathlon
+```
+
+
+

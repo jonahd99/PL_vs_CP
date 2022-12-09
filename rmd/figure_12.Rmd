@@ -1,0 +1,79 @@
+---
+title: "Figure 12 -- Modelling fatigue"
+output: html_document
+---
+
+# Implied modelling of fatigue
+
+```{r}
+library("tidyverse")
+library("magrittr")
+
+P <- 407 # constant power output (chosen such that it leads to exhaustion just after 1 hour in the hyperbolic model)
+
+## Hyperbolic (a.k.a. critical-power) model
+cp      <- 400
+w_prime <- 25500
+
+# Time to exhaustion
+tte_hyp <- w_prime / (P - cp)
+
+## Power-law (a.k.a. Riegel) model
+F <- 1.05
+E <- 1 / F
+
+# # Choose the speed parameter such that we have the same time to exhaustion as in the hyperbolic model for the above-specified constant power output.
+S <- P * tte_hyp^(1 - E)
+
+# # Choose the speed parameter such that both models imply the same maximal sustainable power output over 10 minutes
+# tte <- 10 * 60 # time to exhaustion in seconts
+# S <- w_prime * tte^(-E) + cp * tte^(1 - E) 
+
+# Time to exhaustion
+# tte_pow <- (S / P)^(1 / (1 - E))
+
+## Dynamic analysis
+times <- c(0, 45, 55, 60) * 60 # seconds
+durations <- seq(from = 1, to = 30 * 60, length = 100)
+
+my_tbl <- tibble()
+for (t in seq_along(times)) {
+
+  my_tbl %<>% bind_rows(
+      tibble(
+        time = times[t], 
+        exertion = times[t] * (P / S)^(1 / (1- E)), 
+        balance = 1 - exertion, 
+        par = (S^(1 / (1 - E)) - times[t] * P^(1 / (1 - E)))^(1 - E), 
+        duration = durations,
+        power = par * durations^(E - 1),
+        model = "Power law"
+      )
+    )
+  my_tbl %<>% bind_rows(
+      tibble(
+        time = times[t], 
+        exertion = times[t] * (P - cp) / w_prime,
+        balance = 1 - exertion, 
+        par = w_prime - (P - cp) * times[t],
+        duration = durations,
+        power = par /  durations + cp,
+        model = "Hyperbolic"
+      )
+    )
+}
+
+
+my_tbl %>%
+  mutate(time_label = paste0("After ", time / 60, " minutes")) %>%
+  ggplot(mapping = aes(x = duration, y = power, colour = model)) +
+  geom_line() +
+  coord_cartesian(ylim = c(300, 600), xlim = c(0, 60 * 30)) +
+  theme_classic() +
+#   scale_x_continuous(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(colour = "Model", x = "Duration [s]", y = "Power [J/s]") +
+  facet_grid(cols = vars(time_label))
+
+
+```

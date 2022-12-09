@@ -1,0 +1,77 @@
+---
+title: "Modelling Human Endurance: Power Law vs Critical Power - Figure 3"
+output: html_document
+---
+
+# Setup
+
+```{r}
+library("here")
+library("tidyverse")
+
+options(scipen = 10000) # avoid scientific notation
+
+# Colours
+col_hyp <- "#F8766D"
+col_pow <- "#00BFC4"
+
+my_theme <- theme_classic() +
+  theme(legend.position = c(0.6, 0.9)) # places the legend inside the plot
+```
+
+
+# Figure 3
+```{r}
+fig_3_data <- readRDS(file = here("figure_data","fig_3_data.RDS"))
+labels <- levels(fig_3_data$label)
+
+coords_sprint <- c(15, S[1] * 15^(E[1] - 1))
+label_coords_sprint <- coords_sprint + c(10, 350)
+coords_endure <- c(150, S[2] * 150^(E[2] - 1))
+label_coords_endure <- coords_endure + c(0, 200)
+
+fig_3_data %>%
+  ggplot(mapping = aes(x = duration, y = power, linetype = label)) +
+  geom_line(colour = col_model["power-law"], show.legend = FALSE) +
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_x_continuous(expand = c(0, 0)) +
+  coord_cartesian(ylim = c(0, 1500), xlim = c(0, max(fig_3_data$duration))) +
+  labs(x = "Duration [s]", y = "Power [J/s]", linetype = "") +
+  my_theme +
+  annotate(
+    geom       = "text", 
+    x          = label_coords_sprint[1],
+    y          = label_coords_sprint[2], 
+    label      = labels[1],
+    hjust      = -0.02, vjust = 0,
+    lineheight = 1#,
+  ) + 
+  annotate(
+    geom       = "curve", 
+    xend       = coords_sprint[1],
+    yend       = coords_sprint[2], 
+    x          = label_coords_sprint[1] + 0.05, 
+    y          = label_coords_sprint[2] - 20,
+    curvature  = 0.05, 
+    arrow      = arrow(length = unit(2, "mm")),
+    alpha      = 1#,
+  ) +
+  annotate(
+    geom       = "text", 
+    x          = label_coords_endure[1],
+    y          = label_coords_endure[2], 
+    label      = labels[2],
+    hjust      = 0.8, vjust = 0,
+    lineheight = 1#,
+  ) + 
+  annotate(
+    geom       = "curve", 
+    xend       = coords_endure[1],
+    yend       = coords_endure[2], 
+    x          = label_coords_endure[1] + 0.05, 
+    y          = label_coords_endure[2] - 20,
+    curvature  = -0.2, 
+    arrow      = arrow(length = unit(2, "mm")),
+    alpha      = 1#,
+  )
+```

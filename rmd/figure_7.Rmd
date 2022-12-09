@@ -1,0 +1,42 @@
+---
+title: "Figure 7 -- Large-data study in running"
+output: html_document
+---
+
+```{r, include = FALSE}
+library("here")
+library("tidyverse")
+library("magrittr")
+library("lubridate")
+# library("stats4")
+
+# Modify this to save the figures somewhere else
+path_to_figure_folder <- here("fig")
+
+source(here("script", "compute_and_plot_errors.R"))
+
+```
+
+
+# The PowerOf10 data from Blythe & Kiraly (2016)
+
+
+NOTE: We will refer to "velocity" as "power" instead of "velocity" here because this is what the functions expect.
+
+
+```{r}
+df_errors_power_of_10 <- read_rds(here("figure_data", "df_errors_power_of_10.Rds"))
+```
+
+
+```{r}
+plot_errors(
+  data = df_errors_power_of_10,
+  file = file.path(path_to_figure_folder, "errors_power_of_10.tex"),
+  show.legend = TRUE
+) -> plot_power_of_10
+plot_power_of_10
+```
+
+
+

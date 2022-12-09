@@ -1,0 +1,84 @@
+---
+title: "Modelling Human Endurance: Power Law vs Critical Power - Figure 10"
+output: html_document
+---
+
+# Setup
+
+```{r}
+library("here")
+library("tidyverse")
+library("scales")
+library("magrittr")
+library("janitor")
+library("RColorBrewer")
+library("cowplot")
+library("stats4") # provides nls() for non-linear least squares
+
+options(scipen = 10000) # avoid scientific notation
+
+# Colours
+col_hyp <- "#F8766D"
+col_pow <- "#00BFC4"
+
+# Symbol for the threshold in piecewise-defined models:
+threshold_symbol <- "$T_{\\mathrlap{*}}$"
+
+```
+
+# Figure 10
+
+```{r}
+fig_10_data <- readRDS(here("figure_data","fig_10_data.RDS"))
+fig_10_leo <- readRDS(file = here("figure_data","fig_10_leo.RDS"))
+
+threshold <- 1800 # threshold used by Puchowicz et al. (2020)
+
+################################################################################
+# Visualisation
+################################################################################
+
+coords <- c(1800.0000, 446.2028)
+label_coords <- coords + c(60 * 20, 40)
+
+fig_10_data %>%
+  filter(model %in% c("OmPD", "Om3CP", "OmExp", "Power law")) %>%
+  ggplot(mapping = aes(x = duration, 
+                       y = power, 
+                       colour = model, 
+                       linetype = model)) +
+  geom_point(data = fig_10_leo, mapping = aes(x = duration, y = power, model = NULL), inherit.aes = FALSE, size = 0.3) +
+  geom_line() +
+  geom_vline(xintercept = threshold, linetype = "dotted") +
+  scale_colour_manual(breaks = c("OmPD", "Om3CP", "OmExp", "Power law"),
+                      values = c(col_hyp, col_hyp, col_hyp, col_pow)) +
+  scale_linetype_manual(breaks = c("OmPD", "Om3CP", "OmExp", "Power law"),
+                        values = c(1, 2, 3, 1)) +
+  scale_x_continuous(expand = c(0, 0), breaks = c(60 * c(0, 60, 90), threshold), labels = c(0, 60, 90, threshold_symbol)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(x = "Duration [minutes]", y = "Power [J/s]", 
+       colour = "Model", linetype = "Model") +
+  coord_cartesian(ylim = c(200, 600)) + 
+  annotate(
+    geom       = "text", 
+    x          = label_coords[1],
+    y          = label_coords[2], 
+    label      = "`Kink'",
+    hjust      = 0, vjust = 0,
+    lineheight = 1,
+    colour     = col_hyp
+  ) + 
+  annotate(
+    geom       = "curve", 
+    xend       = coords[1] + 50,
+    yend       = coords[2], 
+    x          = label_coords[1] - 100, 
+    y          = label_coords[2] + 1,
+    curvature  = 0.2, 
+    arrow      = arrow(length = unit(2, "mm")),
+    alpha      = 1,
+    colour     = col_hyp
+  ) +
+  theme_classic()
+```
+
