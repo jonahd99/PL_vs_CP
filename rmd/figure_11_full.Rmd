@@ -1,0 +1,416 @@
+---
+title: "Figure 11"
+output: html_notebook
+editor_options: 
+  chunk_output_type: console
+---
+
+# Setup
+
+```{r}
+library("here")
+library("tidyverse")
+library("scales")
+library("magrittr")
+library("janitor")
+library("RColorBrewer")
+library("cowplot")
+library("stats4") # provides nls() for non-linear least squares
+
+setwd(here())
+
+
+
+options(scipen = 10000) # avoid scientific notation
+
+
+# Colours
+col_hyp <- "#F8766D"
+col_pow <- "#00BFC4"
+
+# Symbol for the threshold in piecewise-defined models:
+threshold_symbol <- "$T_{\\mathrlap{*}}$"
+
+MILE_IN_M <- 1609.34 # number of metres to a mile
+```
+
+# Illustration of the three "omni power--duration" models (OmPD, Om3CP, and OmExp) from Puchowicz et al. (2020).
+
+This clearly shows the "kink" in the power--duration relationship implied by these models at the threshold. In addition, the power--duration curve eventually becomes negative.
+
+
+```{r}
+# The models are fitted to the data from Leo et al. (2021)
+# Note that most most data points are unlikely to correspond to 
+# maximal efforts except perhaps from those at 5, 12, and 35 seconds as well as 
+# 3, 7, and 12 minutes
+data_leo <- readxl::read_excel(here("figure_data", "leo_2021_original_data.xlsx")) %>%
+  rename(duration = `Time (s)`,
+         power = `Mean Maximum Power`,  
+         ompd_leo = `Omni PD`, 
+         pt_leo = `Peronnet & Thibault`) %>%
+  filter(!is.na(duration))
+
+# data_leo %>%
+#   ggplot(mapping = aes(x = duration, y = power)) +
+#   geom_point() +
+#   scale_x_continuous(limits = 60 * c(0, 3), breaks = c(5, 12, 35, 60 * c(3, 7, 12))) + 
+#   theme_grey()
+
+# The durations for plotting.
+durations <- c(0, seq(from = 0.1, to = 60 * 120, length = 250))
+
+################################################################################
+# The three "omni-duration" models from Puchowicz et al. (2020)
+################################################################################
+
+threshold <- 1800 # threshold used by Puchowicz et al. (2020)
+
+# Computes the powers for given durations according to the OmPD model.
+pd_ompd <- function(duration, w_prime, cp, a, p_max) {
+  w_prime / duration * (1 - exp(duration * (cp - p_max) / w_prime)) + cp - (duration > threshold) * a * log(duration / threshold)
+}
+# Computes the powers for given durations according to the Om3CP model.
+pd_om3cp <- function(duration, w_prime, cp, a, p_max) {
+  w_prime / (duration + w_prime / (p_max - cp)) + cp - (duration > threshold) * a * log(duration / threshold)
+}
+# Computes the powers for given durations according to the OmExp model.
+pd_omexp <- function(duration, w_prime, cp, a, p_max) {
+  (p_max - cp) * exp(duration * (cp - p_max) / (exp(1) * w_prime)) + cp - (duration > threshold) * a * log(duration / threshold)
+}
+
+################################################################################
+# The three "Veloclinic" multicomponent models implemented in Golden Cheetah
+# (but not currently used in our paper) for comparison.
+################################################################################
+
+# Computes the powers for given durations according to the "linear" 
+# "Veloclinic" model as implemented in Golden Cheetah.
+pd_gc_lin <- function(duration, w_prime, cp, p_max) {
+  tau_1 <- w_prime / (p_max - cp)
+  tau_2 <- 15000
+  return(
+    w_prime / duration * (1 - exp(-duration / tau_1)) + 
+      cp * tau_2 * (1 - exp(-duration / tau_2)) / duration
+  )
+}
+# Computes the powers for given durations according to the "regeneration" 
+# "Veloclinic" model as implemented in Golden Cheetah.
+pd_gc_reg <- function(duration, w_prime, cp, p_max) {
+  tau_1 <- w_prime / (p_max - cp)
+  tau_2 <- 15000
+  return(
+    w_prime / duration * (1 - exp(-duration / tau_1)) +
+      cp / (1 + duration / tau_2)
+  )
+}
+# Computes the powers for given durations according to the "exponential"
+# "Veloclinic" model as implemented in Golden Cheetah.
+pd_gc_exp <- function(duration, w_prime, cp, p_max) {
+  tau_1 <- w_prime / (p_max - cp)
+  tau_2 <- 15000
+  return(
+    w_prime / duration * (1 - exp(-duration / tau_1)) + 
+      cp / (1 + duration / 5400)
+  )
+}
+
+
+################################################################################
+# The simplified version of the Peronnet & Thibault (1989) model which has 
+# been floating around the internet (e.g., <http://veloclinic.com/peronnet-and-thibault-the-source-model-under-the-hood-of-wko4-wko5/>
+# and which removes the integrals from the 
+# original formulation in Peronnet & Thibault (1989) but we haven't been able
+# to track down the original source for this
+################################################################################
+
+# Computes the powers for given durations according to the simplified
+# Peronnet & Thibault model (given that the simplified model is different from 
+# the original paper, it is not clear which of the model parameters are meant
+# to be estimated from the data and which are fixed to some pre-specified 
+# values
+pd_pt_simple <- function(duration, w_prime, cp, tau_1, tau_2, a) {
+  threshold <- 420
+  w_prime / duration * (1 - exp(-duration / tau_1)) + 
+    cp * (1 - exp(-duration/tau_2)) - 
+    (duration > threshold) * a * log(duration / threshold) 
+}
+
+
+
+################################################################################
+# OmPD model
+################################################################################
+
+
+
+# Initial values
+w_prime_init <- 14000 # previously: 20000 
+cp_init <- 300
+a_init <- 60
+p_max_init <- 1000
+
+# Initial values (these work better for a threshold of 15 minutes)
+# w_prime_init <- 14000 
+# cp_init <- 412
+# a_init <- 85
+# p_max_init <- 1500
+
+# This gives the same formula as the R code 
+# provided in Puchowicz et al. (2020)
+nls_ompd <- nls(
+  formula = power ~ I(pd_ompd(duration, w_prime, cp, a, p_max)),
+  data = data_leo,
+  start = list(w_prime = w_prime_init, cp = cp_init, 
+               a = a_init, p_max = p_max_init),
+  lower = c(0, 0, 0, 0),
+  algorithm = "port",
+  trace = TRUE,
+  control = list(warnOnly = TRUE) 
+)
+
+w_prime_ompd <- coef(nls_ompd)["w_prime"]
+cp_ompd      <- coef(nls_ompd)["cp"]
+a_ompd       <- coef(nls_ompd)["a"]
+p_max_ompd   <- coef(nls_ompd)["p_max"]
+
+fitted_ompd <- 
+  tibble(duration = durations, 
+         power = pd_ompd(durations, w_prime_ompd, cp_ompd, a_ompd, p_max_ompd),
+         model = "OmPD")
+
+
+################################################################################
+# Om3CP model
+################################################################################
+
+nls_om3cp <- nls(
+  formula = power ~ I(pd_om3cp(duration, w_prime, cp, a, p_max)), 
+  data = data_leo, #fitted_ompd,
+  start = list(w_prime = w_prime_ompd, cp = cp_ompd, 
+               a = a_ompd, p_max = p_max_ompd),
+  # lower = c(0, 0, 0, 0),
+  # algorithm = "port",
+  trace = TRUE,
+  control = list(warnOnly = TRUE) 
+)
+
+w_prime_om3cp <- coef(nls_om3cp)["w_prime"]
+cp_om3cp      <- coef(nls_om3cp)["cp"]
+a_om3cp       <- coef(nls_om3cp)["a"]
+p_max_om3cp   <- coef(nls_om3cp)["p_max"]
+
+fitted_om3cp <- 
+  tibble(duration = durations, 
+         power = pd_om3cp(durations, w_prime_om3cp, cp_om3cp, a_om3cp, p_max_om3cp),
+         model = "Om3CP")
+
+
+################################################################################
+# OmExp model
+################################################################################
+
+nls_omexp <- nls(
+  formula = power ~ I(pd_omexp(duration, w_prime, cp, a, p_max)), 
+  data = data_leo, # fitted_ompd,
+  start = list(w_prime = w_prime_ompd, cp = cp_ompd, 
+               a = a_ompd, p_max = p_max_ompd),
+  # lower = c(0, 0, 0, 0),
+  # algorithm = "port",
+  trace = TRUE,
+  control = list(warnOnly = TRUE) 
+)
+
+w_prime_omexp <- coef(nls_omexp)["w_prime"]
+cp_omexp      <- coef(nls_omexp)["cp"]
+a_omexp       <- coef(nls_omexp)["a"]
+p_max_omexp   <- coef(nls_omexp)["p_max"]
+
+fitted_omexp <- 
+  tibble(duration = durations, 
+         power = pd_omexp(durations, w_prime_omexp, cp_omexp, a_omexp, p_max_omexp),
+         model = "OmExp")
+
+
+################################################################################
+# The "Veloclinic multicomponent" "linear" model from Golden Cheetah
+################################################################################
+
+nls_gc_lin <- nls(
+  formula = power ~ I(pd_gc_lin(duration, w_prime, cp, p_max)), 
+  data = data_leo, # fitted_ompd,
+  start = list(w_prime = w_prime_ompd, cp = cp_ompd, 
+               p_max = p_max_ompd),
+  # lower = c(0, 0, 0, 0),
+  # algorithm = "port",
+  trace = TRUE,
+  control = list(warnOnly = TRUE) 
+)
+
+w_prime_gc_lin <- coef(nls_gc_lin)["w_prime"]
+cp_gc_lin      <- coef(nls_gc_lin)["cp"]
+p_max_gc_lin   <- coef(nls_gc_lin)["p_max"]
+
+fitted_gc_lin <- 
+  tibble(duration = durations, 
+         power = pd_gc_lin(durations, w_prime_gc_lin, cp_gc_lin, p_max_gc_lin),
+         model = "gc_lin")
+
+################################################################################
+# The "Veloclinic multicomponent" "regeneration" model from Golden Cheetah
+################################################################################
+
+nls_gc_reg <- nls(
+  formula = power ~ I(pd_gc_reg(duration, w_prime, cp, p_max)), 
+  data = data_leo, # fitted_ompd,
+  start = list(w_prime = w_prime_ompd, cp = cp_ompd, 
+               p_max = p_max_ompd),
+  # lower = c(0, 0, 0, 0),
+  # algorithm = "port",
+  trace = TRUE,
+  control = list(warnOnly = TRUE) 
+)
+
+w_prime_gc_reg <- coef(nls_gc_reg)["w_prime"]
+cp_gc_reg      <- coef(nls_gc_reg)["cp"]
+p_max_gc_reg   <- coef(nls_gc_reg)["p_max"]
+
+fitted_gc_reg <- 
+  tibble(duration = durations, 
+         power = pd_gc_reg(durations, w_prime_gc_reg, cp_gc_reg, p_max_gc_reg),
+         model = "gc_reg")
+
+
+################################################################################
+# The "Veloclinic multicomponent" "exponential" model from Golden Cheetah
+################################################################################
+
+nls_gc_exp <- nls(
+  formula = power ~ I(pd_gc_exp(duration, w_prime, cp, p_max)), 
+  data = data_leo, # fitted_ompd,
+  start = list(w_prime = w_prime_ompd, cp = cp_ompd, 
+               p_max = p_max_ompd),
+  # lower = c(0, 0, 0, 0),
+  # algorithm = "port",
+  trace = TRUE,
+  control = list(warnOnly = TRUE) 
+)
+
+w_prime_gc_exp <- coef(nls_gc_exp)["w_prime"]
+cp_gc_exp      <- coef(nls_gc_exp)["cp"]
+p_max_gc_exp   <- coef(nls_gc_exp)["p_max"]
+
+fitted_gc_exp <- 
+  tibble(duration = durations, 
+         power = pd_gc_exp(durations, w_prime_gc_exp, cp_gc_exp, p_max_gc_exp),
+         model = "gc_exp")
+
+
+
+################################################################################
+# Power-law model
+################################################################################
+
+ols_pow <- lm(formula = I(log(power)) ~ I(log(duration)), data = data_leo) # fitted_ompd)
+speed     <- exp(coef(ols_pow))[1]
+endurance <- coef(ols_pow)[2] + 1
+
+fitted_pow <- tibble(duration = durations,
+                     power = speed * durations^(endurance - 1),
+                     model = "Power law")
+
+################################################################################
+# Combining all the fitted values into a single tibble
+################################################################################
+
+fitted_tbl <- fitted_pow %>%
+  bind_rows(fitted_ompd) %>%
+  bind_rows(fitted_om3cp) %>%
+  bind_rows(fitted_omexp) %>%
+  bind_rows(fitted_gc_lin) %>%
+  bind_rows(fitted_gc_reg) %>%
+  bind_rows(fitted_gc_exp)
+
+################################################################################
+# Visualisation
+################################################################################
+
+coords <- c(threshold, pd_ompd(threshold, w_prime_ompd, cp_ompd, a_ompd, p_max_ompd)) + c(0, 12)
+label_coords <- coords + c(60 * 20, 40)
+
+fitted_tbl %>%
+  filter(model %in% c("OmPD", "Om3CP", "OmExp", "Power law") & duration != 0) %>%
+  ggplot(mapping = aes(x = duration, 
+                       y = power, 
+                       colour = model, 
+                       linetype = model)) +
+  geom_point(data = data_leo, mapping = aes(x = duration, y = power, model = NULL), inherit.aes = FALSE, size = 0.3) +
+  geom_line() +
+  geom_vline(xintercept = threshold, linetype = "dotted") +
+  scale_colour_manual(breaks = c("OmPD", "Om3CP", "OmExp", "Power law"),
+                      values = c(col_hyp, col_hyp, col_hyp, col_pow)) +
+  scale_linetype_manual(breaks = c("OmPD", "Om3CP", "OmExp", "Power law"),
+                        values = c(1, 2, 3, 1)) +
+  scale_x_continuous(expand = c(0, 0), breaks = c(60 * c(0, 60, 90), threshold), labels = c(0, 60, 90, threshold_symbol)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(x = "Time to exhaustion [min]", y = "Power [J/s]", 
+       colour = "Model", linetype = "Model") +
+  coord_cartesian(ylim = c(200, 600)) +   # coord_cartesian(ylim = c(200, 500)) +
+  annotate(
+    geom       = "text", 
+    x          = label_coords[1],
+    y          = label_coords[2], 
+    label      = "`Kink'",
+    hjust      = 0, vjust = 0,
+    lineheight = 1,
+    colour     = col_hyp
+  ) + 
+  annotate(
+    geom       = "curve", 
+    xend       = coords[1] + 50,
+    yend       = coords[2], 
+    x          = label_coords[1] - 100, 
+    y          = label_coords[2] + 1,
+    curvature  = 0.2, 
+    arrow      = arrow(length = unit(2, "mm")),
+    alpha      = 1,
+    colour     = col_hyp
+  ) 
+```
+
+
+
+```{r}
+fitted_tbl_aux <- data_leo %>%
+  select(duration, ompd_leo) %>%
+  rename(power = ompd_leo) %>%
+  mutate(model = "ompd_leo")
+
+fitted_tbl_aux <- fitted_tbl %>% bind_rows(fitted_tbl_aux)
+  
+  
+fitted_tbl_aux %>%
+  filter(model %in% c("OmPD", "ompd_leo", "gc_lin", "gc_reg", "gc_exp")) %>%
+  ggplot(mapping = aes(x = duration, 
+                       y = power, 
+                       colour = model)) +
+  geom_point(data = data_leo, mapping = aes(x = duration, y = power, model = NULL), inherit.aes = FALSE, size = 0.3) +
+  geom_line() +
+  geom_vline(xintercept = threshold, linetype = "dotted") +
+  # scale_colour_manual(breaks = c("OmPD", "Om3CP", "OmExp", "Power law"),
+                      # values = c(col_hyp, col_hyp, col_hyp, col_pow)) +
+  # scale_linetype_manual(breaks = c("OmPD", "Om3CP", "OmExp", "Power law"),
+                        # values = c(1, 2, 3, 1)) +
+  scale_x_continuous(expand = c(0, 0), breaks = c(60 * c(0, 60, 90), threshold), 
+                     labels = c(0, 60, 90, threshold_symbol)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(x = "Time to exhaustion [min]", y = "Power [J/s]", 
+       colour = "Model", linetype = "Model") +
+  coord_cartesian(ylim = c(200, 600)) -> p
+
+# save_image(plot_omni_alt, "omni_alt", width = 4, height = 2.3)
+```
+
+
+
+
