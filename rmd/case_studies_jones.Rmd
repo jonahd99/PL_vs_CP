@@ -1,0 +1,540 @@
+---
+title: "Illustrations of the Jones 2019 and 2017 case studies"
+output: html_notebook
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r}
+library("here")
+library("tidyverse")
+library("scales")
+library("magrittr")
+library("janitor")
+library("RColorBrewer")
+library("cowplot")
+library("stats4") # provides nls() for non-linear least squares
+library("hms")
+
+# library("ggtext") # provides functionality for changing font sizes /within/ ggplot text
+
+# devtools::install_github("baptiste/egg")
+# The above command installs the package egg which 
+# helps with arranging multiple plots when some have a legend
+# and others have not, e.g. see the command
+# grid::grid.draw(egg::ggarrange(plots = list(p1, p2), ncol = 1)) below:
+
+source(here("script", "compute_and_plot_errors.R"))
+source(here("script", "model_fitting.R"))
+
+
+
+options(scipen = 10000) # avoid scientific notation
+
+
+# Colours
+col_hyp <- "#F8766D"
+col_pow <- "#00BFC4"
+
+```
+
+
+```{r}
+###############################################################################
+## Running - data 
+###############################################################################
+
+df_wa_running <- read_rds(here("figure_data", "wa_running.Rds"))
+
+
+jones_2017_runners <- c("Patrick Makau Musyoki","Haile Gebrselassie","Geoffrey Mutai",
+                        "Ayele Abshero","Samuel Kamau Wanjiru","Evans Rutto Limo","Khalid Khannouchi",
+                        "Felix Limo","Antonio Pinto","Steve Jones","Mo Farah","Eliud Kipchoge")
+jones_2017_data <- df_wa_running %>%
+  filter(athlete %in% jones_2017_runners) %>%
+  group_by(athlete,work) %>%
+  slice(which.min(durations))
+
+jones_2017_data$athlete <- recode(jones_2017_data$athlete, 
+                                  "Patrick Makau Musyoki" = "Patrick M.\ Musyoki",
+                                  "Samuel Kamau Wanjiru" = "Samuel K.\ Wanjiru",
+                                  "Evans Rutto Limo" = "Evans R.\ Limo")
+
+```
+
+
+
+
+```{r}
+t<- seq(from =1 , to = 10800, length = 500)
+T <- length(t)
+
+###############################################################################
+## Running - All athletes
+###############################################################################
+
+
+jones_2017_data$athlete <- as.factor(jones_2017_data$athlete)
+
+
+medium_running_data <- jones_2017_data %>%
+  filter(work >= 1500 & work  <= 15000)
+
+plotting_athletes <- unique(jones_2017_data$athlete)
+
+non_medium_running_data <- jones_2017_data%>%
+  filter(work  < 1500 | work  > 15000)
+
+
+runners_tibble <- tibble()
+
+for (i in unique(jones_2017_data$athlete)){
+ 
+##############################################################################
+# Fit the power-law model
+##############################################################################
+    
+    pl_data <- jones_2017_data %>%
+    filter(athlete == i)
+ 
+    pl_fit <- fit_pow_lr_pow(pl_data,t)
+
+  
+##############################################################################
+# Fit the hyperbolic model
+##############################################################################
+  
+    # Critical power model
+    cp_data <- medium_running_data %>%
+    filter(athlete == i)
+    
+    cp_fit <- fit_cp_lr_pow(cp_data,t)
+    
+
+##############################################################################
+# Storing the athletes fit
+##############################################################################    
+    
+    
+  aux_tibble <- tibble(athlete = rep(i, times = T*2),
+                       time =rep(t, times = 2),
+                       velocity = c(pl_fit,cp_fit),
+                       model = c(rep("Power law", times = T), rep("Hyperbolic", times = T)))
+    runners_tibble <- rbind(runners_tibble,aux_tibble)
+  
+}
+
+runners_tibble %>%
+  ggplot() +
+  geom_line(mapping = aes(x = time, y = velocity, colour = model)) +
+  geom_point(data = medium_running_data , mapping = aes(x = durations,y = power), colour = "black") +
+  geom_point(data = non_medium_running_data , mapping = aes(x = durations,y = power), shape = 17, colour = "black") +
+  scale_x_continuous(trans = "log", breaks = c(60,120,240,600,1400,3600,7200), labels = c(1,2,4,10,30,60,120) ) +
+  scale_y_continuous(trans = "log", breaks = c(5,6,7,8)) +
+  coord_cartesian(xlim =c(60,7800), ylim = c(5,8)) +
+  labs(x = "Duration [minutes]", y = "Velocity [m/s]", colour = "") +
+  scale_colour_manual(
+    values = c(col_hyp,col_pow),
+    guide = guide_legend(
+      override.aes = list(
+        linetype = c("solid"),
+        shape = c(NA)
+      )
+    )
+  )+
+  theme_classic()  +
+  facet_wrap(~athlete) -> plot_runners
+
+
+
+plot_runners
+
+```
+
+
+```{r}
+###############################################################################
+## Eliud Kipchoge - Jones 2019 case study
+###############################################################################
+
+
+kipchoge_data <- df_wa_running %>%
+  filter(athlete == "Eliud Kipchoge") %>%
+  group_by(work) %>%
+  slice(which.min(durations)) 
+
+kipchoge_medium_data <- kipchoge_data  %>%
+  filter(durations >= 120 & durations <= 840)
+
+###############################################################################
+## Eliud Kipchoge - Jones 2019 Power-law fit
+###############################################################################
+
+t<- seq(from = 1, to = 840 , length = 840)
+T <- length(t)
+
+pl_fit_med<-fit_pow_lr_pow(kipchoge_medium_data,t)
+
+###############################################################################
+## Eliud Kipchoge - Jones 2019 Panel A 
+###############################################################################
+
+
+panel_a_tibble <- tibble(athlete = rep(kipchoge_data$athlete[1], times = T*2),
+                         time = rep(t, times =2),
+                         velocity = c(fit_cp_lr_pow(kipchoge_medium_data,t),pl_fit_med),
+                         model = c(rep("Hyperbolic",times = T),rep("Power Law",times = T)))
+
+
+panel_a_tibble%>%
+  filter(time <= 860) %>%
+  ggplot() +
+  geom_line(mapping = aes(x = time, y = velocity, colour = model)) +
+  geom_point(data = kipchoge_medium_data , mapping = aes(x = durations,y = power), colour = "black") +
+  scale_x_continuous(expand = c(0,0),breaks = c(0,120*c(1:7))) +
+  scale_y_continuous(expand = c(0, 0),
+                     breaks = c(2*(2:7))) +
+  coord_cartesian(xlim =c(0,860), ylim = c(4,15)) +
+  labs(x = "Duration [s]", y = "Velocity [m/s]", colour = "") +
+  scale_colour_manual(
+    values = c(col_hyp,col_pow),
+    guide = guide_legend(
+      override.aes = list(
+        linetype = c("solid"),
+        shape = c(NA)
+      )
+    )
+  )+
+  theme_classic() +
+  theme(legend.position="none") -> plot_A
+
+
+plot_A
+
+
+###############################################################################
+## Eliud Kipchoge - Jones 2019 Power-law fit (All Durations)
+###############################################################################
+
+t<- seq(from = 1, to = 10000 , length = 1000)
+T <- length(t)
+
+pl_fit_all<-fit_pow_lr_pow(kipchoge_data,t)
+
+pl_dis_all <- fit_pow_lr_dis(kipchoge_data,t)
+
+
+
+###############################################################################
+## Eliud Kipchoge - Jones 2019 Panel B 
+###############################################################################
+
+panel_b_tibble <- tibble(athlete = rep(kipchoge_data$athlete[1], times = T*2),
+                         time = rep(t, times =2),
+                         velocity = c(fit_cp_lr_pow(kipchoge_medium_data,t),pl_fit_all),
+                         model = c(rep("Hyperbolic",times = T),rep("Power Law",times = T)))
+
+kipchoge_non_medium <- kipchoge_data %>%
+  filter(durations < 120 | durations > 840)
+  
+
+panel_b_tibble %>%
+  filter(time <= 8600) %>%
+ggplot() +
+  geom_line(mapping = aes(x = time, y = velocity, colour = model)) +
+  geom_point(data = kipchoge_medium_data , mapping = aes(x = durations,y = power), colour = "black") +
+  geom_point(data = kipchoge_non_medium , mapping = aes(x = durations,y = power), shape = 17, colour = "black") +
+  scale_x_continuous(expand = c(0, 0),breaks = c(0,1200*c(1:7))) +
+  scale_y_continuous(expand = c(0, 0),
+                     breaks = c(2*(2:7))) +
+  coord_cartesian(xlim =c(0,8600), ylim = c(4,15)) +
+  labs(x = "Duration [s]", y = "Velocity [m/s]", colour = "") +
+  scale_colour_manual(
+    values = c(col_hyp,col_pow),
+    guide = guide_legend(
+      override.aes = list(
+        linetype = c("solid"),
+        shape = c(NA)
+      )
+    )
+  )+
+  theme_classic() +
+  theme(legend.position = c(0.8, 0.8))-> plot_B
+
+
+plot_B
+
+
+###############################################################################
+## Eliud Kipchoge - Jones 2019 Panel C
+###############################################################################
+
+panel_c_cp_dis <- fit_cp_lr_dis(kipchoge_medium_data,t)
+
+
+panel_c_tibble <- tibble(athlete = rep(kipchoge_data$athlete[1], times = T*2), 
+                 distance = c(pl_dis_all,panel_c_cp_dis),
+                 time = rep(t,times = 2) ,
+                 model = c(rep("Power law",times = T),rep("Hyperbolic",times = T)))
+
+
+
+panel_c_tibble %>%
+  filter(time <= 8600) %>%
+  ggplot() +
+  geom_line(mapping = aes(x = time, y = distance, colour = model)) +
+  geom_point(data = kipchoge_medium_data , mapping = aes(x = durations,y = work), colour = "black") +
+  geom_point(data = kipchoge_non_medium , mapping = aes(x = durations,y = work), shape = 17, colour = "black") +
+  scale_x_continuous(expand = c(0, 0),breaks = c(0,1200*c(1:7))) +
+  scale_y_continuous(expand = c(0, 0),
+                     breaks = c(0,10000*(1:5)), labels = c(0,10*(1:5))) +
+  coord_cartesian(xlim =c(0,8600), ylim = c(0,43000)) +
+  labs(x = "Duration [s]", y = "Distance [km]", colour = "") +
+  scale_colour_manual(
+    values = c(col_hyp,col_pow),
+    guide = guide_legend(
+      override.aes = list(
+        linetype = c("solid"),
+        shape = c(NA)
+      )
+    )
+  )+
+  theme_classic()+
+  theme(legend.position="none")-> plot_C
+
+
+plot_C
+###############################################################################
+## Eliud Kipchoge - Jones 2019 Panel D
+###############################################################################
+
+panel_d_cp_pow <- fit_cp_lr_pow(kipchoge_medium_data,t)
+
+panel_d_tibble <- tibble(athlete = rep(kipchoge_data$athlete[1], times = T*2), 
+                 velocity = c(pl_fit_all,panel_d_cp_pow),
+                 time = rep(t,times = 2) ,
+                 inv_t = rep(1/t,times = 2) ,
+                 model = c(rep("Power law",times = T),rep("Hyperbolic",times = T)))
+
+
+panel_d_tibble  %>%
+  filter(time <= 8600) %>%
+  ggplot()+
+  geom_line(mapping = aes(x = inv_t, y = velocity, colour = model)) +
+  geom_point(data = kipchoge_medium_data , mapping = aes(x = 1/durations,y = power), colour = "black") +
+  geom_point(data = kipchoge_non_medium , mapping = aes(x = 1/durations,y = power), shape = 17, colour = "black") +
+  scale_x_continuous(expand = c(0, 0),breaks = c(0,0.002*c(1:3))) +
+  scale_y_continuous(expand = c(0, 0),
+                     breaks = (seq(from = 5.5, to = 7.5, by = 0.5))) +
+  coord_cartesian(xlim =c(0,0.007), ylim = c(5.5,7.5)) +
+  labs(x = "1/Duration [1/s]", y = "Velocity [m/s]", colour = "") +
+  scale_colour_manual(
+    values = c(col_hyp,col_pow),
+    guide = guide_legend(
+      override.aes = list(
+        linetype = c("solid"),
+        shape = c(NA)
+      )
+    )
+  )+
+  theme_classic()+
+  theme(legend.position="none")-> plot_D
+
+
+
+plot_D
+
+
+###############################################################################
+## Eliud Kipchoge - Jones 2019 All
+###############################################################################
+
+
+# grid::grid.draw(egg::ggarrange(plots = list(plot_A,plot_B,plot_C,plot_D), ncol = 2))   
+
+```
+
+
+
+```{r}
+###############################################################################
+## Running - Haile Gebreselassie
+###############################################################################
+
+
+gebrselassie_data <- df_wa_running %>%
+  filter(athlete == "Haile Gebrselassie") %>%
+  group_by(work) %>%
+  slice(which.min(durations)) 
+
+t<- seq(from =1 , to = 10800, length = 500)
+T <- length(t)
+
+###################
+# Power-law model #
+###################
+
+gebrselassie_pl_dis_fit <- fit_pow_lr_dis(gebrselassie_data,t)
+gebrselassie_pl_vel_fit <- fit_pow_lr_pow(gebrselassie_data,t)
+
+####################
+# Hyperbolic model #
+####################
+
+gebrselassie_medium_data <- gebrselassie_data %>%
+  filter(work >= 2000 & work <= 15000)
+
+gebrselassie_non_medium_data <- gebrselassie_data %>%
+  filter(work < 2000 | work > 15000)
+
+
+gebrselassie_cp_dis_fit <- fit_cp_lr_dis(gebrselassie_medium_data,t)
+gebrselassie_cp_vel_fit <- fit_cp_lr_pow(gebrselassie_medium_data,t)
+
+
+#####################
+#  Plotting tibble  #
+#####################
+
+gebrselassie_tibble <- tibble(athlete = rep(gebrselassie_data$athlete[1], times = T*2), 
+                 velocity = c(gebrselassie_pl_vel_fit,gebrselassie_cp_vel_fit), 
+                 distance = c(gebrselassie_pl_dis_fit,gebrselassie_cp_dis_fit),
+                 time = rep(t,times = 2), 
+                 model = c(rep("Power law",times = T),rep("Hyperbolic",times = T)))
+
+#############
+#  Panel A  #
+#############
+
+gebrselassie_tibble %>%
+  filter(time <= 8600) %>%
+  ggplot() +
+  geom_line(mapping = aes(x = time, y = distance, colour = model)) +
+  geom_point(data = gebrselassie_medium_data , mapping = aes(x = durations,y = work), colour = "black") +
+  geom_point(data = gebrselassie_non_medium_data , mapping = aes(x = durations,y = work), shape = 17, colour = "black") +
+  scale_x_continuous(expand = c(0,0),breaks = c(0,1200*c(1:7))) +
+  scale_y_continuous(expand = c(0, 0),
+                     breaks = c(0,10000*(1:4)),
+                     labels = c(0,10*(1:4))) +
+  coord_cartesian(xlim =c(0,7600), ylim = c(0,45000)) +
+  labs(x = "Duration [s]", y = "Distance [km]", colour = "") +
+  scale_colour_manual(
+    values = c(col_hyp,col_pow),
+    guide = guide_legend(
+      override.aes = list(
+        linetype = c("solid"),
+        shape = c(NA)
+      )
+    )
+  )+
+  theme_classic() +
+  theme(legend.position="none") -> plot_A
+
+plot_A
+
+
+
+#############
+#  Panel B  #
+#############
+
+gebrselassie_tibble %>%
+  filter(time <= 8600) %>%
+  ggplot() +
+  geom_line(mapping = aes(x = time, y = velocity, colour = model)) +
+  geom_point(data = gebrselassie_medium_data , mapping = aes(x = durations,y = power), colour = "black") +
+  geom_point(data = gebrselassie_non_medium_data , mapping = aes(x = durations,y = power), shape = 17, colour = "black") +
+  scale_x_continuous(expand = c(0,0),breaks = c(0,1200*c(1:7))) +
+  scale_y_continuous(expand = c(0, 0),
+                     breaks = c(5,5.5,6,6.5,7,7.5)) +
+  coord_cartesian(xlim =c(0,7600), ylim = c(5,7.5)) +
+  labs(x = "Duration [s]", y = "Velocity [m/s]", colour = "") +
+  scale_colour_manual(
+    values = c(col_hyp,col_pow),
+    guide = guide_legend(
+      override.aes = list(
+        linetype = c("solid"),
+        shape = c(NA)
+      )
+    )
+  )+
+  theme_classic() +
+  theme(legend.position=c(0.8,0.8)) -> plot_B
+
+
+
+plot_B
+
+#############
+#  All  #
+#############
+
+# grid::grid.draw(egg::ggarrange(plots = list(plot_A,plot_B), ncol = 2))  
+
+```
+
+
+
+```{r}
+# Table 2 - Eliud Kipchoge Personal Records
+
+df_wa_running %>%
+  filter(athlete == "Eliud Kipchoge") %>%
+  ungroup() %>%
+  select(discipline,is_outdoor,durations,power) %>%
+  mutate(Velocity = round(power,2),Time = as_hms(durations)) %>%
+  mutate(Event = if_else(is_outdoor == 0, paste(discipline, "(indoor)"), discipline)) %>%
+  select(Event, Time, Velocity) 
+
+
+```
+
+
+
+
+```{r}
+# Table 3 - Haile Gebrselassie Personal Records
+
+df_wa_running %>%
+  filter(athlete == "Haile Gebrselassie") %>%
+  ungroup() %>%
+  select(discipline,is_outdoor,durations,power) %>%
+  mutate(Velocity = round(power,2),Time = as_hms(durations)) %>%
+  mutate(Event = if_else(is_outdoor == 0, paste(discipline, "(indoor)"), discipline)) %>%
+  select(Event, Time, Velocity) 
+
+
+```
+
+```{r}
+# Table 4 - Comparison of errors for all Jones 2017 athletes
+
+medium <- jones_2017_data %>%
+  filter(work >= 1500 & work  <= 15000) %>%
+  rename(duration = durations,id = athlete) %>% 
+  compare_models_by_error() %>% 
+  select(id,sigma_hyp_pd,sigma_pow_pd) %>%
+  mutate(Athlete = id, Power_law_2_to_15 = round(sigma_pow_pd,4),Hyperbolic_2_to_15 = round(sigma_hyp_pd,4)) %>%
+  select(Athlete,Power_law_2_to_15,Hyperbolic_2_to_15)
+
+
+all <- jones_2017_data %>%
+  rename(duration = durations,
+         id = athlete) %>% compare_models_by_error() %>%
+  select(id,sigma_hyp_pd,sigma_pow_pd) %>%
+  mutate(Athlete = id, Power_law_All = round(sigma_pow_pd,4),Hyperbolic_All = round(sigma_hyp_pd,4)) %>%
+  select(Athlete,Power_law_All,Hyperbolic_All)
+
+averages <- tibble(Athlete = "Average", 
+                   Hyperbolic_2_to_15 = round(mean(medium$Hyperbolic_2_to_15),4),
+                   Power_law_2_to_15 = round(mean(medium$Power_law_2_to_15),4), 
+                   Hyperbolic_All = round(mean(all$Hyperbolic_All),4),
+                   Power_law_All = round(mean(all$Power_law_All),4)) 
+
+
+left_join(medium,all, by = join_by(Athlete)) %>% rbind(averages)
+
+```
+
+

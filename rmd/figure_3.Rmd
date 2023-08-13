@@ -22,8 +22,26 @@ my_theme <- theme_classic() +
 
 # Figure 3
 ```{r}
-fig_3_data <- readRDS(file = here("figure_data","fig_3_data.RDS"))
-labels <- levels(fig_3_data$label)
+
+durations   <- seq(from = 0, to = 180, length = 300)
+n_durations <- length(durations)
+S <- c(1600, 750)
+E <- c(0.7, 0.9)
+athletes <- c("Sprint specialist\n(large $S$, small $E$)", 
+              "Endurance specialist\n(small $S$, large $E$)")
+n_athletes <- length(athletes)
+
+
+fig_3_data <- tibble(
+  duration = rep(durations, times = n_athletes),
+  speed = rep(S, each = n_durations),
+  endurance = rep(E, each = n_durations),
+  power = speed * duration^(endurance - 1),
+  athlete = rep(athletes, each = n_durations)
+)
+
+
+labels <- unique(fig_3_data$athlete)
 
 coords_sprint <- c(15, S[1] * 15^(E[1] - 1))
 label_coords_sprint <- coords_sprint + c(10, 350)
@@ -31,8 +49,8 @@ coords_endure <- c(150, S[2] * 150^(E[2] - 1))
 label_coords_endure <- coords_endure + c(0, 200)
 
 fig_3_data %>%
-  ggplot(mapping = aes(x = duration, y = power, linetype = label)) +
-  geom_line(colour = col_model["power-law"], show.legend = FALSE) +
+  ggplot(mapping = aes(x = duration, y = power, linetype = athlete)) +
+  geom_line(colour = col_pow, show.legend = FALSE) +
   scale_y_continuous(expand = c(0, 0)) +
   scale_x_continuous(expand = c(0, 0)) +
   coord_cartesian(ylim = c(0, 1500), xlim = c(0, max(fig_3_data$duration))) +

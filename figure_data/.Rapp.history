@@ -1,0 +1,2 @@
+load("/Users/jonah/Dropbox/Mac/Desktop/Power_law_vs_CP/PL_vs_CP/figure_data/df_seiler (1).Rds")
+load("/Users/jonah/Dropbox/Mac/Desktop/Power_law_vs_CP/PL_vs_CP/figure_data/df_errors_power_of_10 (1).Rds")

@@ -1,0 +1,85 @@
+---
+title: "Large-data study in running"
+output: html_notebook
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r, include = FALSE}
+library("here")
+library("tidyverse")
+library("magrittr")
+library("lubridate")
+# library("stats4")
+
+
+source(here("script", "compute_and_plot_errors.R"))
+
+rewrangle_data   <- FALSE
+recompute_errors <- FALSE
+```
+
+
+The PowerOf10 data from Blythe & Kiraly (2016):
+
+```{r, include = FALSE}
+if (rewrangle_data) {
+  
+  athletes <- 
+    read_csv(here("figure_data", "athletes.csv"), 
+             col_names = c("id", "gender", "birthdate")) %>%
+    mutate(birthdate = parse_date(birthdate, format = "[%Y %m %d]")) # the "athletes" data set is unused here
+  
+  df_power_of_10 <- 
+    read_csv(here("figure_data", "events.csv"), 
+             col_names = c("id", "type", "distance", "duration", "date")) %>%
+    mutate(date = parse_date(date, format = "[%Y %m %d]")) %>%
+    mutate(power = distance / duration) %>%
+    filter(power < 11 & power > 1) # remove some data points with 
+    # unrealistic velocities (the finish times in the original data set
+    # may not have been correctly converted into seconds)
+  
+  write_rds(df_power_of_10, file = here("figure_data", "df_power_of_10.Rds"))
+  
+} else {
+  
+  df_power_of_10 <- read_rds(here("figure_data", "df_power_of_10.Rds"))
+  
+}
+```
+
+NOTE: We will refer to "velocity" as "power" instead of "velocity" here because this is what the functions expect.
+
+
+```{r}
+if (recompute_errors) {
+  
+  compute_errors(
+    data = df_power_of_10,
+    durations_min = 60 * c(0, 1, rep(2, times = 6)),
+    durations_max = 60 * c(15, 15, 15, 16, 20, 30, 60, 240),
+    n_efforts_min = 4,
+    n_distances_min = 3
+  ) -> df_errors_power_of_10
+  
+  write_rds(df_errors_power_of_10, file = here("figure_data", "df_errors_power_of_10.Rds"))
+  
+} else {
+
+  df_errors_power_of_10 <- read_rds(here("figure_data", "df_errors_power_of_10.Rds"))
+  
+}
+```
+
+
+```{r}
+plot_errors(
+  data = df_errors_power_of_10,
+  show.legend = TRUE
+) -> plot_power_of_10
+```
+
+```{r}
+
+```
+
